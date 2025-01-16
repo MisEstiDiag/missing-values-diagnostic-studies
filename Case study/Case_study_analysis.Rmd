@@ -1,0 +1,517 @@
+---
+title: "Modified case study - Additional file 3"
+author: 
+ - Katharina Stahlmann, University Medical Center Hamburg-Eppendorf<br>  Institute of Medical Biometry and Epidemiology, k.stahlmann@uke.de,
+ - Bastiaan Kellerhuis, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands
+ - Johannes B. Reitsma, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands
+ - Nandini Dendukuri, Department of Medicine, McGill University, Montreal, Canada
+ - Antonia Zapf, University Medical Center Hamburg-Eppendorf<br>  Institute of Medical Biometry and Epidemiology
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    depth: 6
+    fig_caption: no
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+  word_document:
+    toc: yes
+editor_options:
+  chunk_output_type: console
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# set global chunk options for html
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+# this options for word export
+#knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+options(stringsAsFactors = F)
+# always show NA is there is any in the table function
+table = function (..., useNA = 'ifany') base::table(..., useNA = useNA)
+
+# Note: The complete RMarkdown script takes ca. 45 minutes to run, if the results under MCAR, MAR and MNAR are calculated and not loaded
+```
+
+# Settings
+
+## Packages
+
+```{r packages}
+library(mice)
+library(pROC)
+library(mitml)
+library(mix)
+library(mi)
+library(ggplot2)
+library(writexl)
+library(ggpubr)
+library(haven)
+library(dplyr)
+library(gt)
+library(arsenal)
+```
+
+## load functions
+
+```{r}
+source("./Case study/functions_AUC_ROC.R")
+
+# set global controls for tableby command
+mycontrols = tableby.control(numeric.stats=c("Nmiss","mean", "sd", "medianq1q3", "range"),
+                             cat.stats=c("Nmiss", "countpct"), 
+                             stats.labels=list(Nmiss='Missing values', medianq1q3='Median (Q1, Q3)'),
+                             test = F)
+```
+
+# Methods compared in this modified case study
+
+Table 1. Overview of methods
+
+
+| Methods     |                                                                                 |
+|:------------|:--------------------------------------------------------------------------------|
+| CCA       	| Complete case analysis                                                          |
+| HDEL        | Hot Deck Empirical Likelihood Approach (Wang and Qin 2012, 2014)                |
+| MI2       	| Multiple Imputation using prediction and propensity score (Long et al. 2011a)   |
+| MIB2        | MI2 + bootstrap step for calculating confidence intervals (Long et al. 2011a)   |
+| mice        | Multiple Imputation using chained equations (van Buuren et al. 2011)            |
+| mix         | Multiple Imputation using joint modelling (Schafer 2022)                        |
+| KER         | Kernel-based Inverse Probability Weighting (Bianco et al. 2023)                 |
+| AIPW        | Augmented Inverse Probability Weighting (Long et al. 2011b)                     |
+| CONV       	| Convolution-based approach (Bianco et al. 2023)                                                           |
+| mi          | Multiple Imputation using chained equations with predictive mean matching (PMM) (Su et al. 2022)          |
+
+
+# Load and prepare dataset
+
+The dataset nnhs2.dta from the Diagnostic and Biomarkers Statistical (DABS) Center is used. A detailed description of this study can be found in Norton et al. (2000).
+
+```{r, results='hide'}
+nnhs2 <- read_dta("./Case study/nnhs2.dta")
+
+# ear: 1=left 2=right
+# sitenum: site
+# currage: current age
+# d: disease (reference test)
+# y1: DPOAE
+# y2: TEOAE
+# y3: ABR
+
+summary(nnhs2)
+table(nnhs2$d)
+```
+
+The data are restricted to the left year, as the methods are not designed for clustered data. In this subset, missing values (n=1) occur only in the variable currage, neither in the index test(s) nor reference standard. These observations are excluded from the analysis. 
+
+```{r}
+# generate original dataset without any missing values
+# use only left ear (=1) (no clustered data)
+data_full <- nnhs2 %>%
+  filter(ear==1 & !is.na(currage)) %>%
+  mutate(
+    id = as_factor(id),
+    ear = as_factor(ear),
+    sitenum = as_factor(sitenum),
+    gender = as_factor(gender),
+    d = as_factor(d)
+  )
+
+# generate dataset with missing values
+# a priori: define missingness pattern
+mypattern <- matrix(nrow = 1, ncol = 9)
+mypattern[1, ] <- c(1,1,1,1,1,1,0,1,1) # only y1 (DPOAE) is missing 
+
+```
+
+Table 2. Descriptive overview of complete dataset for the total sample and stratified by reference test (hearing impaired yes/no)
+
+```{r, results='asis'}
+summary(tableby(d ~ ., data = data_full[,c("sitenum", "currage", "gender", "d", "y1")], control = mycontrols), pfootnote = T) 
+```
+
+# MCAR and 30% percent of missing values
+
+```{r}
+pm = 0.3
+mech = "MCAR"
+```
+
+The original dataset (data_full) with restriction to only left ears is used as "true comparison" for the results based on the amputed dataset (data). The latter dataset was generated using the function ampute of the mice package (van Buuren 2011) and generates missing values in the variable y1 (index test). A percentage of missing values of `r pm` and a missingness mechanism of `r mech` is defined.
+
+## Generating the missing data and calculate AUC and ROC 
+
+```{r, include=FALSE, eval=FALSE}
+
+# these calculations take a while (ca 20 min); thus we save the data and load them in the next chunk
+set.seed(7499)
+source("./Case study/Calculations.R")
+
+res_auc_mcar <- res_auc %>%
+  mutate(
+    across(c(AUC, CI_lower, CI_upper), as.numeric)
+  )
+
+saveRDS(res_auc_mcar, "./Case study/Ergebnisse/res_auc_MCAR.rds")
+
+roc_mcar <- roc
+saveRDS(roc_mcar, "./Case study/Ergebnisse/res_roc_MCAR.rds") 
+```
+
+```{r}
+# load data
+res_auc_mcar <- readRDS("./Case study/Ergebnisse/res_auc_MCAR.rds")
+roc_mcar <- readRDS("./Case study/Ergebnisse/res_roc_MCAR.rds")
+```
+
+## Results
+
+### Results for the AUC of y1 (DPOAE)
+
+Table 3. The AUC and its CI estimated by each method
+
+```{r}
+tab1 <- res_auc_mcar %>%
+  mutate(
+    across(c(AUC, CI_lower, CI_upper), ~round(.x, 2)),
+    ci = paste0("[", CI_lower, ", ", CI_upper, "]")
+  ) %>%
+  select(-c(CI_lower, CI_upper)) %>%
+  gt() %>%
+  cols_label(
+    Method = "Method",
+    AUC = "AUC",
+    ci = "Confidence interval"
+  )
+tab1
+
+```
+
+Figure 1. The AUC and its confidence interval estimated by each method under MCAR
+
+```{r, fig.width=18, fig.height=11}
+
+# get values for AUC of full dataset
+AUC <- res_auc_mcar[which(res_auc_mcar$Method=="CCA full data"), "AUC"]
+CIL <- res_auc_mcar[which(res_auc_mcar$Method=="CCA full data"), "CI_lower"]
+CIU <- res_auc_mcar[which(res_auc_mcar$Method=="CCA full data"), "CI_upper"]
+
+# plot comparing the AUC estimates
+plot1 <- ggplot(res_auc_mcar, aes(x=Method, y=AUC)) +
+  geom_point(size=2) +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), linewidth=1, width=0.5)  +
+  geom_hline(yintercept = AUC, col = "red") +
+  geom_hline(yintercept = c( CIL, CIU), col = "red", linetype = "dashed") +
+  theme(axis.title = element_text(size = 18),
+        axis.text = element_text(size = 16),
+        plot.title = element_text(size = 20))
+plot1
+#ggsave("./Case study/Ergebnisse/mcar_AUC.pdf", width = 20, height = 10)
+```
+
+The solid red line indicates the AUC estimate calculated by standard complete case analysis based on the full dataset. The dashed red lines show its confidence limits. 
+
+### Results of the ROC
+
+Figure 2. The ROC estimated by each method under MCAR
+
+```{r, fig.width=18, fig.height=11}
+# plot comparing the ROC curves (without CI),
+cols <- c("CONV"="blue","HDEL"="green", "CCA_full"="red", "CCA"="black", "KER"="grey", "MI2"="orange", "MIB2"="purple",
+          "mice"="pink", "mix"="yellow", "mi"="brown")
+
+ggplot(data=roc_mcar, aes(x=tt))+
+  geom_line(aes(y=ROC.CONV,color="CONV"), linewidth=1)+
+  geom_line(aes(y=ROC.CCA_full,color="CCA_full"), linewidth=1)+
+  geom_line(aes(y=ROC.CCA,color="CCA"), linewidth=1)+
+  geom_line(aes(y=ROC.HDEL,color="HDEL"), linewidth=1)+
+  geom_line(aes(y=ROC.KER,color="KER"), linewidth=1)+
+  geom_line(aes(y=ROC.MIB2,color="MIB2"), linewidth=1)+
+  geom_line(aes(y=ROC.MI2,color="MI2"), linewidth=1)+
+  geom_line(aes(y=ROC.mice,color="mice"), linewidth=1)+
+  geom_line(aes(y=ROC.mix,color="mix"), linewidth=1)+
+  geom_line(aes(y=ROC.mi_,color="mi"), linewidth=1)+
+  scale_colour_manual(name="Methods",values=cols) +
+  ylab("True Positive Rate") + xlab("False Positive Rate") +
+  geom_line(aes(y=tt,color="black")) +
+  theme(axis.title = element_text(size = 18),
+        axis.text = element_text(size = 16),
+        plot.title = element_text(size = 20),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18))
+#ggsave("./Case study/Ergebnisse/mcar_ROC.pdf", width = 15, height = 10)
+
+```
+
+The method AIPW is not included in this figure of ROCs as it does not calculate the ROC.
+
+# MAR and 30% percent of missing values
+
+```{r}
+pm = 0.3
+mech = "MAR"
+```
+
+The original dataset (data_full) with restriction to only left ears is used as "true comparison" for the results based on the amputed dataset (data). The latter dataset was generated using the function ampute of the mice package (van Buuren 2011) and generates missing values in the variable y1 (index test). A percentage of missing values of `r pm` and a missingness mechanism of `r mech` is defined.
+
+## Generating the missing data and calculate AUC and ROC 
+
+```{r, include=FALSE, eval=FALSE}
+# these calculations take a while (ca 20 min); thus we save the data and load them in the next chunk
+
+set.seed(295)
+source("./Case study/Calculations.R")
+
+res_auc_mar <- res_auc %>%
+  mutate(
+    across(c(AUC, CI_lower, CI_upper), as.numeric)
+  )
+saveRDS(res_auc_mar, "./Case study/Ergebnisse/res_auc_MAR.rds")
+
+roc_mar <- roc
+saveRDS(roc_mar, "./Case study/Ergebnisse/res_roc_MAR.rds") 
+```
+
+```{r}
+# load data
+res_auc_mar <- readRDS("./Case study/Ergebnisse/res_auc_MAR.rds")
+roc_mar <- readRDS("./Case study/Ergebnisse/res_roc_MAR.rds")
+```
+
+## Results
+
+### Results for the AUC of y1
+
+Table 4. The AUC and its CI estimated by each method under MAR
+
+```{r}
+tab1 <- res_auc_mar %>%
+  mutate(
+    across(c(AUC, CI_lower, CI_upper), ~round(.x, 2)),
+    ci = paste0("[", CI_lower, ", ", CI_upper, "]")
+  ) %>%
+  select(-c(CI_lower, CI_upper)) %>%
+  gt() %>%
+  cols_label(
+    Method = "Method",
+    AUC = "AUC",
+    ci = "Confidence interval"
+  )
+tab1
+
+```
+
+Figure 3. The AUC and its CI estimated by each method under MAR (Fig. 6 in the manuscript)
+
+```{r, fig.width=18, fig.height=11}
+
+#### this chunk produces Figure 6 in the manuscript ####
+
+AUC <- res_auc_mar[which(res_auc_mar$Method=="CCA full data"), "AUC"]
+CIL <- res_auc_mar[which(res_auc_mar$Method=="CCA full data"), "CI_lower"]
+CIU <- res_auc_mar[which(res_auc_mar$Method=="CCA full data"), "CI_upper"]
+
+plot1 <- ggplot(res_auc_mar, aes(x=Method, y=AUC)) +
+  geom_point(size=2) +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), linewidth=1, width=0.5)  +
+  geom_hline(yintercept = AUC, col = "red") +
+  geom_hline(yintercept = c( CIL, CIU), col = "red", linetype = "dashed") +
+  theme(axis.title = element_text(size = 18),
+        axis.text = element_text(size = 16))
+plot1
+#ggsave("Ergebnisse/mar_AUC.pdf", width = 20, height = 10)
+ggsave("./Case study/Ergebnisse/mar_auc.png", width = 15, height = 10)
+```
+
+The solid red line indicates the AUC estimate calculated by standard complete case analysis based on the full dataset. The dashed red lines show its confidence limits. 
+
+### Results of the ROC
+
+Figure 4. The ROC estimated by each method under MAR (Fig. 7 in the manuscript)
+
+```{r, fig.width=18, fig.height=11}
+
+#### this chunk produces Figure 7 in the manuscript ####
+
+cols <- c("CONV"="blue","HDEL"="green", "CCA_full"="red", "CCA"="black", "KER"="grey", "MI2"="orange", "MIB2"="purple",
+          "mice"="pink", "mix"="yellow", "mi"="brown")
+
+ggplot(data=roc_mar, aes(x=tt))+
+  geom_line(aes(y=ROC.CONV,color="CONV"), linewidth=1)+
+  geom_line(aes(y=ROC.CCA_full,color="CCA_full"), linewidth=1)+
+  geom_line(aes(y=ROC.CCA,color="CCA"), linewidth=1)+
+  geom_line(aes(y=ROC.HDEL,color="HDEL"), linewidth=1)+
+  geom_line(aes(y=ROC.KER,color="KER"), linewidth=1)+
+  geom_line(aes(y=ROC.MIB2,color="MIB2"), linewidth=1)+
+  geom_line(aes(y=ROC.MI2,color="MI2"), linewidth=1)+
+  geom_line(aes(y=ROC.mice,color="mice"), linewidth=1)+
+  geom_line(aes(y=ROC.mix,color="mix"), linewidth=1)+
+  geom_line(aes(y=ROC.mi_,color="mi"), linewidth=1)+
+  scale_colour_manual(name="Estimations",values=cols) +
+  ylab("True Positive Rate") + xlab("False Positive Rate") +
+  geom_line(aes(y=tt,color="black")) +
+  theme(axis.title = element_text(size = 18),
+        axis.text = element_text(size = 16),
+        plot.title = element_text(size = 20),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18))
+#ggsave("Ergebnisse/mar_ROC.pdf", width = 15, height = 10)
+ggsave("./Case study/Ergebnisse/mar_roc.png", width = 15, height = 10)
+
+```
+
+
+# MNAR and 30% percent of missing values
+
+```{r}
+pm = 0.3
+mech = "MNAR"
+```
+
+The original dataset (data_full) with restriction to only left ears is used as "true comparison" for the results based on the amputed dataset (data). The latter dataset was generated using the function ampute of the mice package (van Buuren 2011) and generates missing values in the variable y1 (index test). A percentage of missing values of `r pm` and a missingness mechanism of `r mech` is defined.
+
+## Generating the missing data and calculate AUC and ROC 
+
+```{r, include=FALSE, eval=FALSE}
+# these calculations take a while (ca 20 min); thus we save the data and load them in the next chu
+
+set.seed(682)
+source("./Case study/Calculations.R")
+
+res_auc_mnar <- res_auc %>%
+  mutate(
+    across(c(AUC, CI_lower, CI_upper), as.numeric)
+  )
+saveRDS(res_auc_mnar, "./Case study/Ergebnisse/res_auc_MNAR.rds")
+
+roc_mnar <- roc
+saveRDS(roc_mnar, "./Case study/Ergebnisse/res_roc_MNAR.rds") 
+```
+
+```{r}
+# load data
+res_auc_mnar <- readRDS("./Case study/Ergebnisse/res_auc_MNAR.rds")
+roc_mnar <- readRDS("./Case study/Ergebnisse/res_roc_MNAR.rds")
+```
+
+## Results
+
+### Results for the AUC of y1
+
+Table 5. The AUC and its CI estimated by each method
+
+```{r}
+tab1 <- res_auc_mnar %>%
+  mutate(
+    across(c(AUC, CI_lower, CI_upper), ~round(.x, 2)),
+    ci = paste0("[", CI_lower, ", ", CI_upper, "]")
+  ) %>%
+  select(-c(CI_lower, CI_upper)) %>%
+  gt() %>%
+  cols_label(
+    Method = "Method",
+    AUC = "AUC",
+    ci = "Confidence interval"
+  )
+tab1
+
+```
+
+Figure 5. The AUC and its confidence interval estimated by each method under MNAR
+
+```{r, fig.width=18, fig.height=11}
+AUC <- res_auc_mnar[which(res_auc_mnar$Method=="CCA full data"), "AUC"]
+CIL <- res_auc_mnar[which(res_auc_mnar$Method=="CCA full data"), "CI_lower"]
+CIU <- res_auc_mnar[which(res_auc_mnar$Method=="CCA full data"), "CI_upper"]
+
+plot1 <- ggplot(res_auc_mnar, aes(x=Method, y=AUC)) +
+  geom_point(size=2) +
+  geom_errorbar(aes(ymin=CI_lower, ymax=CI_upper), linewidth=1, width=0.5)  +
+  geom_hline(yintercept = AUC, col = "red") +
+  geom_hline(yintercept = c( CIL, CIU), col = "red", linetype = "dashed") +
+  theme(axis.title = element_text(size = 18),
+        axis.text = element_text(size = 16),
+        plot.title = element_text(size = 20))
+plot1
+#ggsave("./Case study/Ergebnisse/mnar_AUC.pdf", width = 20, height = 10)
+```
+
+The solid red line indicates the AUC estimate calculated by standard complete case analysis based on the full dataset. The dashed red lines show its confidence limits. 
+
+### Results of the ROC
+
+Figure 6. The ROC estimated by each method under MNAR
+
+```{r, fig.width=18, fig.height=11}
+cols <- c("CONV"="blue","HDEL"="green", "CCA_full"="red", "CCA"="black", "KER"="grey", "MI2"="orange", "MIB2"="purple",
+          "mice"="pink", "mix"="yellow", "mi"="brown")
+
+ggplot(data=roc_mnar, aes(x=tt))+
+  geom_line(aes(y=ROC.CONV,color="CONV"), linewidth=1)+
+  geom_line(aes(y=ROC.CCA_full,color="CCA_full"), linewidth=1)+
+  geom_line(aes(y=ROC.CCA,color="CCA"), linewidth=1)+
+  geom_line(aes(y=ROC.HDEL,color="HDEL"), linewidth=1)+
+  geom_line(aes(y=ROC.KER,color="KER"), linewidth=1)+
+  geom_line(aes(y=ROC.MIB2,color="MIB2"), linewidth=1)+
+  geom_line(aes(y=ROC.MI2,color="MI2"), linewidth=1)+
+  geom_line(aes(y=ROC.mice,color="mice"), linewidth=1)+
+  geom_line(aes(y=ROC.mix,color="mix"), linewidth=1)+
+  geom_line(aes(y=ROC.mi_,color="mi"), linewidth=1)+
+  scale_colour_manual(name="Estimations",values=cols) +
+  ylab("True Positive Rate") + xlab("False Positive Rate") +
+  geom_line(aes(y=tt,color="black")) +
+  theme(axis.title = element_text(size = 18),
+        axis.text = element_text(size = 16),
+        plot.title = element_text(size = 20),
+        legend.text = element_text(size = 16),
+        legend.title = element_text(size = 18))
+#ggsave("./Case study/Ergebnisse/mnar_ROC.pdf", width = 15, height = 10)
+```
+
+# References 
+
+Bianco AM, Boente G, González–Manteiga W, Pérez–González A. Estimators for ROC curves with missing biomarkers values and informative covariates. Statistical Methods & Applications. 2023.
+
+Diagnostic and Biomarkers Statistical (DABS) Center. Fred Hutch Cancer Center.  [https://research.fredhutch.org/diagnostic-biomarkers-center/en/datasets.html. Accessed 21 Dec 2023.
+
+Long Q, Zhang X, Hsu C-H. Nonparametric multiple imputation for receiver operating characteristics analysis when some biomarker values are missing at random. Stat Med. 2011a;30(26):3149-61.
+
+Long Q, Zhang X, Johnson BA. Robust estimation of area under ROC curve using auxiliary variables in the presence of missing biomarker values. Biometrics. 2011b;67(2):559-67.
+
+Norton SJ, Gorga MP, Widen JE, Folsom RC, Sininger Y, Cone-Wesson B, et al. Identification of neonatal hearing impairment: evaluation of transient evoked otoacoustic emission, distortion product otoacoustic emission, and auditory brain stem response test performance. Ear Hear. 2000;21(5):508-28.
+
+Schafer J. mix: Estimation/Multiple Imputation for Mixed Categorical and Continuous Data. R package version 10-11. 2022.
+
+Su Y-S, Gelman A, Hill J, Yajima M. Multiple Imputation with Diagnostics (mi) in R: Opening Windows into the Black Box. Journal of Statistical Software. 2011;45(2):1 - 31.
+
+van Buuren S, Groothuis-Oudshoorn K. mice: Multivariate Imputation by Chained Equations in R. Journal of Statistical Software. 2011;45(3):1 - 67.
+
+Wang B, Qin G. Imputation-based empirical likelihood inference for the area under the ROC curve with missing data. Stat Interface. 2012;5(3):319-29.
+
+Wang B, Qin G. Empirical likelihood-based confidence intervals for the sensitivity of a continuous-scale diagnostic test with missing data. Commun Stat Theory Methods. 2014;43(15):3248-68.
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
