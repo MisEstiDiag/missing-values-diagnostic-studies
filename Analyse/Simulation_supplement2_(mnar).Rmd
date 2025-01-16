@@ -1,0 +1,497 @@
+---
+title: 'Methods to handle missing values in a continuous index test in a diagnostic study – supplemental mnar scenarios (Additional file 2)'
+author: 
+- Katharina Stahlmann, University Medical Center Hamburg-Eppendorf<br>  Institute of Medical Biometry and Epidemiology, k.stahlmann@uke.de
+ - Bastiaan Kellerhuis, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands
+ - Johannes B. Reitsma, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands
+ - Nandini Dendukuri, Department of Medicine, McGill University, Montreal, Canada
+ - Antonia Zapf, University Medical Center Hamburg-Eppendorf<br>  Institute of Medical Biometry and Epidemiology
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    depth: 6
+    fig_caption: no
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+  word_document:
+    toc: yes
+editor_options:
+  chunk_output_type: console
+always_allow_html: yes
+---
+
+```{r setup}
+
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+                       
+# set global chunk options
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 12,
+                       fig.asp = 0.8 ,
+                       out.width = "120%")
+
+# this options for word export
+#knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+options(stringsAsFactors = F)
+# always show NA is there is any in the table function
+table = function (..., useNA = 'ifany') base::table(..., useNA = useNA)
+```
+
+# Settings
+
+## Packages
+
+```{r packages}
+library(ggplot2)
+library(writexl)
+library(ggpubr)
+library(RColorBrewer)
+library(dplyr)
+library(arsenal)
+library(rsimsum)
+library(gt)
+library(gtsummary)
+```
+
+## load functions
+
+```{r}
+
+mycontrols = tableby.control(numeric.stats=c("Nmiss","mean", "sd", "medianq1q3", "range"),
+                             cat.stats=c("Nmiss", "countpct"), 
+                             stats.labels=list(Nmiss='Missing values', medianq1q3='Median (Q1, Q3)'),
+                             test = F)
+
+colors <- brewer.pal(8, "Dark2")
+```
+
+# Simulation 
+
+## Set up simulation parameters
+
+```{r}
+nsim <- 100
+
+#define simulation scenarios
+grid = expand.grid(
+  sim = 1:nsim 
+  , N = c(500, 1000)
+  , p = c(0.1, 0.3, 0.5)
+  , AUC_0 = c(0.85)
+  , r = c(0.5)
+  , pm = c(0.3)
+  , mech = c("MNAR")
+  , type = c("MID")
+)
+
+
+# methods to be compared
+methods <- c("CCA", "MI2", "MIB2", "HDEL", "KER", "mice", "mix", "AIPW")
+
+
+Abbreviation = names(grid)
+setup <- data.frame(
+  Abbreviation = names(grid),
+  Parameter = c("Number of simulations", "Sample size", "prevalence of the target condition", "True AUC", "Correlation between index test and covariates", "proportion of missing values", "Missingness Mechanism", "Type"),
+  Values = c(
+    nsim,
+    sapply(Abbreviation[2:length(Abbreviation)], function(x) (paste(unique(grid[,x]), collapse = ',')))
+  )
+)  
+setup %>%
+  gt() %>% 
+  tab_style(style = cell_text(weight = "bold"), locations = cells_column_labels(columns=c("Abbreviation", "Parameter", "Values"))) %>%
+  tab_header(
+    title = "Table 1. Overview of simulation parameter"
+  )
+
+```
+
+
+Table 2. Overview of methods
+
+| Methods     |                                                                                 |
+|:------------|:--------------------------------------------------------------------------------|
+| CCA       	| Complete case analysis                                                          |
+| MI2       	| Multiple Imputation using prediction and propensity score (Long et al. 2011a)   |
+| MIB2        | MI2 + bootstrap step for calculating confidence intervals (Long et al. 2011a)   |
+| HDEL        | Hot Deck Empirical Likelihood Approach (Wang and Qin 2012, 2014)                |
+| KER         | Kernel-based Inverse Probability Weighting (Bianco et al. 2023)                 |
+| mice        | Multiple Imputation using chained equations (van Buuren et al. 2011)            |
+| mix         | Multiple Imputation using joint modelling (Schafer 2022)                        |
+| AIPW        | Augmented Inverse Probability Weighting (Long et al. 2011b)                     |
+
+
+
+The seed for the parallel loop was set to 5273 and to 4730xi for data generation. 
+
+## Conduct the simulation
+
+```{r simulation, eval=FALSE}
+# due to time reasons the simulation is not conducted but the data are loaded in the following chunk
+source("./Analyse/Simulation_mnar.R")
+```
+  
+
+Load the simulation results
+
+```{r}
+
+name <- "results_mnar"
+load(file = paste0("./Analyse/hpc/Simulation_data/", name, ".Rdata"))
+
+
+res <- res %>%
+  rename(r = korr) %>%
+  select(-type)
+
+```
+
+
+# Calculate Performance parameter
+
+The following performance parameter will be calculated: number of missing values, bias, root mean squared error, empirical standard deviation, coverage, bias-eliminated coverage and power as well as the respective monte carlo standard errors for each performance parameter. 
+
+```{r}
+source("Analyse/Simulation_performance3.R")
+# input: res (file with simulation results as dataframe)
+# out: raw_res (res + step 1 of performance calculation -> 1 row for each simulation run), scenario_res (dataframe with performance parameters, -> 1 row for each scenario aggregated over the runs)
+```
+
+# Results
+
+## Table of performance parameter 
+
+```{r, results='asis'}
+# rearrange the scenario_res table columns, so that performance estimate and its MC standard error are located side by side
+vars=list()
+for (i in 1:length(methods)){
+  vars_i <- grep(methods[i], names(scenario_res), value = T)
+  vars[[i]] <- vars_i
+}
+vars_order <- unlist(vars)
+dat_table1 <- scenario_res[,c(8,1:6)]
+dat_table2 <- scenario_res[,vars_order]
+dat_table <- cbind(dat_table1, dat_table2)
+rownames(dat_table) <- NULL
+
+# label selected variables in dat_table
+dat_table <- dat_table %>%
+  sjlabelled::var_labels(
+    scenario = "Scenario",
+    N = "Sample size",
+    p = "Prevalence of target condition",
+    AUC_0 = "True AUC",
+    r = "Correlation",
+    pm = "Proportion of missing values",
+    mech = "Missingness mechanism",
+    av.time.AUC.CCA = "Average running time for CCA",
+    av.time.AUC.MI2 = "Average running time for MI2",
+    av.time.AUC.MIB2 = "Average running time for MIB2",
+    av.time.AUC.HDEL = "Average running time for HDEL",
+    av.time.AUC.mice = "Average running time for mice",
+    av.time.AUC.mix = "Average running time for mix",
+    av.time.AUC.AIPW = "Average running time for AIPW",
+    av.time.AUC.KER = "Average running time for KER"
+  )
+
+
+# show table for bias
+bias <- grep("bias", names(dat_table), value = FALSE)
+knitr::kable(dat_table[,c(1:7,bias)], "simple", 
+             col.names = gsub("[.]", " ", names(dat_table[,c(1:7,bias)])), 
+             caption = "Table 3. Bias and its Monte Carlo Standard Error for each method",
+             digits = 4, format.args = list(scientific = FALSE))
+
+# show table for RMSE 
+mse <- grep("MSE", names(dat_table), value = FALSE)
+knitr::kable(dat_table[,c(1:7,mse)], "simple", 
+             col.names = gsub("[.]", " ", names(dat_table[,c(1:7,mse)])),
+             caption = "Table 4. Rot mean squared error and its Monte Carlo Standard Error for each method",
+             digits = 4, format.args = list(scientific = FALSE))
+
+# show table for empSE
+empse <- grep("empSE", names(dat_table), value = FALSE)
+knitr::kable(dat_table[,c(1:7,empse)], "simple", 
+             col.names = gsub("[.]", " ", names(dat_table[,c(1:7,empse)])),
+             caption = "Table 5. Empirical Standard Error and its Monte Carlo Standard Error for each method",
+             digits = 4, format.args = list(scientific = FALSE))
+
+# show table for coverage
+cov <- grep("cov", names(dat_table), value = FALSE)
+knitr::kable(dat_table[,c(1:7,cov)], "simple", 
+             col.names = gsub("[.]", " ", names(dat_table[,c(1:7,cov)])),
+             caption = "Table 6. Coverage and its Monte Carlo Standard Error for each method",
+             digits = 4, format.args = list(scientific = FALSE))
+
+# show table for power
+power <- grep("power", names(dat_table), value = FALSE)
+knitr::kable(dat_table[,c(1:7,power)], "simple", 
+             col.names = gsub("[.]", " ", names(dat_table[,c(1:7,power)])),
+             caption = "Table 7. Power and its Monte Carlo Standard Error for each method",
+             digits = 4, format.args = list(scientific = FALSE))
+
+
+# save results in excel file
+write_xlsx(scenario_res, path = "./Analyse/Ergebnisse/res_suppl_mnar.xlsx")
+```
+
+Table 8. Overview of average running time (in seconds) summarized across all scenarios
+```{r, results='asis'}
+
+# table with running time summarized across all scenarios 
+time <- grep("time", names(dat_table), value = TRUE)
+summary(tableby( ~ ., data = dat_table[,c(time)], control = mycontrols), pfootnote = T) 
+
+```
+
+There are no missing values in the estimation of the AUC
+
+```{r, include=FALSE, results='asis', eval=FALSE}
+# only for scenarios with missing values
+miss <- grep("Missing", names(dat_table), value = TRUE)
+dat_table_miss <- dat_table %>%
+  select(c(1:8, all_of(miss))) %>%
+  mutate(
+    rowmiss = select(., starts_with("Missing")) %>% rowSums()
+  ) %>%
+  filter(rowmiss>0) %>%
+  select(-c(rowmiss))
+knitr::kable(dat_table_miss, "simple", 
+             col.names = gsub("[.]", " ", names(dat_table_miss)), 
+             caption = "Table 7. The number of missing values per scenario (sum across all repititions) for each method (only displaying scenarios with missing values",
+             digits = 4, format.args = list(scientific = FALSE))
+    
+
+```
+
+
+## Graphical display of performance results
+
+### Bias 
+
+```{r}
+
+# reshape from wide to long (only one column for bias and estimated AUC, respectively)
+performparam <- list(auc_vars,names1)
+performnames <- c("AUC","Bias")
+dat_fig <- raw_res[,c("scenario","N","p","AUC_0","r","pm","mech",auc_vars,names1)]
+dat_fig$id <- seq_along(1:nrow(dat_fig))
+dat_long <- reshape(dat_fig, varying=performparam, v.names = performnames, times = methods, 
+                    idvar = "id", direction = "long")
+dat_long$scenario <- as.factor(dat_long$scenario)
+colnames(dat_long)[colnames(dat_long) == "time"] <- "Method" # rename method variable
+
+```
+
+
+```{r}
+
+plot_bias <- ggplot(dat_long, aes(x = Method, y = Bias)) +
+                          geom_violin(fill = colors[1], trim=FALSE) +
+                          stat_summary(fun=mean, geom="point", size=2, color=colors[6]) +
+                          xlab("Method") + ylab("Bias") +
+                          geom_hline(yintercept=0) +
+                          scale_y_continuous(limits = c(-0.15,0.15)) +
+                          theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+                          facet_grid(N ~ p, labeller = label_both) +
+                          ggtitle("Figure 1. Violin plot of bias") +
+                          theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14))
+plot_bias
+
+```
+
+```{r comparison with main MNAR simulation scenario}
+
+table_b <- dat_long %>%
+  filter(N==500 & (p==0.1 | p==0.5)) %>%
+  select(Method, Bias,p) %>%
+  tbl_strata(strata=p, .tbl_fun =  ~ .x %>% 
+             tbl_summary(by=Method,
+                           type = list(all_continuous()~"continuous2"),
+                           statistic = list(all_continuous() ~ c("{mean} ({sd})",
+                                                    "{median} ({p25}, {p75})", 
+                                                    "[{min}, {max}]")),
+                           digits = list(all_continuous() ~4)))
+
+tab_b <- table_b %>%
+  as_gt() %>%
+  tab_header(
+    title = "Table 9. Summary statistics for bias for a small sample size (N=500)"
+  )
+tab_b
+```
+
+
+```{r}
+# reshape summary results for further plots
+performparam <- list(names1,names2,names3,names4,names13,names5,names6,names7,names8,names9,names14,names10,names11)
+performnames <- c("Bias","RMSE","empirical_SE","Coverage","be_coverage",
+                  "Power","MCE_bias","MCE_MSE","MCE_empSE","MCE_cov", "MCE_be_cov", "MCE_power", "av_time")
+scenario_res$id <- seq_along(1:nrow(scenario_res))
+res_long <- reshape(scenario_res, varying=performparam, v.names = performnames, times = methods, 
+                    idvar = "id", direction = "long")
+colnames(res_long)[colnames(res_long) == "time"] <- "Method" # rename method variable
+
+```
+
+Comparison between additional MNAR scenarios (type=MID) and main simulation MNAR scenarios (type=RIGHT)
+
+```{r}
+load("./Analyse/mnar_test.RData")
+mnar_test$type <- "RIGHT"
+
+res_long$type <- "MID"
+mnar_dta <- rbind(res_long, mnar_test)
+```
+
+```{r}
+comp_bias <- ggplot(mnar_dta, aes(x = p, y = Bias, group = Method)) +
+                      geom_line(aes(color=Method, linetype = Method), linewidth=1) +
+                      scale_color_manual(values = colors) +
+                      xlab("Prevalence") + ylab("Bias") +
+                      facet_grid(N ~ type, labeller = label_both) + 
+                      scale_x_continuous(breaks = c(0.1,0.3,0.5)) +
+                      ggtitle("Figure 2. Bias for MNAR type=mid vs. type=right (pm=0.3, r=0.5, true AUC=0.85)") +
+                      theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14))
+comp_bias
+```
+
+All methods tend to overestimate the AUC under type=MID whereas they tend to underestimate the AUC under type=RIGHT. Additionally, the bias increases with higher prevalence given type=MID while it stays the same or slightly decreases with higher prevalence given type=RIGHT.
+
+### Root mean squared error (RMSE)
+
+Comparison between additional MNAR scenarios (type=MID) and main simulation MNAR scenarios (type=RIGHT)
+
+```{r}
+
+comp_rmse <- ggplot(mnar_dta, aes(x = p, y = RMSE, group = Method)) +
+                      geom_line(aes(color=Method, linetype = Method), linewidth=1) +
+                      scale_color_manual(values = colors) +
+                      xlab("Prevalence") + ylab("Root mean squared error") +
+                      facet_grid(N ~ type, labeller = label_both) + 
+                      scale_x_continuous(breaks = c(0.1,0.3,0.5)) +
+                      ggtitle("Figure 3. RMSE for MNAR type=mid vs. type=right (pm=0.3, r=0.5, true AUC=0.85)") +
+                      theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14))
+comp_rmse
+
+```
+
+Regardless of method, the RMSE is higher for type=RIGHT than for type=MID if the prevalence of the target condition is low. However, there are no differences in RMSE between type=RIGHT and type=MID with higher prevalence. 
+
+
+### Coverage probability
+
+```{r}
+
+# calculate 95% Monte carlo CI for coverage
+res_long$MC_cov_ciu <- res_long$Coverage+1.96*res_long$MCE_cov
+res_long$MC_cov_cil <- res_long$Coverage-1.96*res_long$MCE_cov
+
+# variable indicating whether bias is "too high" (bias>5%)
+res_long$rel_bias <- (res_long$Bias/res_long$AUC_0)*100 # relative bias in %
+res_long$bias_cut <- as.factor(if_else(res_long$rel_bias>=5 | res_long$rel_bias<=(-5), "too biased (>=5%)", "acceptable biased"))
+
+
+plot_conv <- ggplot(res_long, aes(y=Method, x=Coverage, color=bias_cut)) +
+                      geom_segment( aes(y=Method, yend=Method, x=0.95, xend=Coverage)) +
+                      geom_point(size=2) +
+                      geom_vline(xintercept=0.95) +
+                      geom_text(aes(MC_cov_ciu, Method, label = ")")) +
+                      geom_text(aes(MC_cov_cil, Method, label = "(")) +
+                      facet_grid(N ~ p, labeller = label_both) + # pm~p
+                      scale_color_grey() +
+                      ggtitle("Figure 4. Coverage probability") +
+                      labs(color="Bias categorized") +
+                      theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              legend.position = "bottom")
+plot_conv
+
+```
+
+
+### Power
+
+```{r}
+
+plot_power <- ggplot(res_long, aes(x = p, y = Power, group = Method)) +
+                            geom_line(aes(color=Method, linetype=Method), linewidth=1) +
+                            scale_x_continuous(breaks = c(0.1,0.3,0.5)) +
+                            scale_color_manual(values = colors) +
+                            xlab("Proportion of missing values") + ylab("Power") +
+                            facet_grid( ~ N, labeller = label_both) +
+                            ggtitle("Figure 5. Power") +
+                            theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14))
+plot_power
+
+```
+
+## Overview of Monte Carlo Errors
+
+Table 10. Summary statistics of Monte Carlo Standard Errors summarized across all scenarios and iterations
+
+```{r, results='asis'}
+summary(tableby(Method ~ ., data = res_long[,c("Method", "MCE_bias","MCE_MSE", "MCE_cov", "MCE_power")], control = mycontrols), pfootnote = T) 
+```
+
+## Nested loop plots for the "big picture"
+
+Figure 6. Nested loop plot for bias
+
+```{r}
+s1 <- simsum(data = dat_long, estvarname = "AUC", ref="CCA", true = "AUC_0", methodvar = "Method", by=c("p", "N"))
+#summary(s1)
+
+ap <- autoplot(s1, type = "nlp", stats = "bias")
+ap + scale_color_manual(values = colors)
+
+#autoplot(s1, type = "nlp", stats = "mse")
+```
+
+# References
+
+Bianco AM, Boente G, González–Manteiga W, Pérez–González A. Estimators for ROC curves with missing biomarkers values and informative covariates. Statistical Methods & Applications. 2023.
+
+Long Q, Zhang X, Hsu C-H. Nonparametric multiple imputation for receiver operating characteristics analysis when some biomarker values are missing at random. Stat Med. 2011a;30(26):3149-61.
+
+Long Q, Zhang X, Johnson BA. Robust estimation of area under ROC curve using auxiliary variables in the presence of missing biomarker values. Biometrics. 2011b;67(2):559-67.
+
+Schafer J. mix: Estimation/Multiple Imputation for Mixed Categorical and Continuous Data. R package version 10-11. 2022.
+
+van Buuren S, Groothuis-Oudshoorn K. mice: Multivariate Imputation by Chained Equations in R. Journal of Statistical Software. 2011;45(3):1 - 67.
+
+van Smeden M, Moons KG, de Groot JA, et al. Sample size for binary logistic prediction models: Beyond events per variable criteria. Stat Methods Med Res. 2019;28(8):2455-2474. doi:10.1177/0962280218784726
+
+Wang B, Qin G. Imputation-based empirical likelihood inference for the area under the ROC curve with missing data. Stat Interface. 2012;5(3):319-29.
+
+Wang B, Qin G. Empirical likelihood-based confidence intervals for the sensitivity of a continuous-scale diagnostic test with missing data. Commun Stat Theory Methods. 2014;43(15):3248-68.
+
+# Session info
+
+```{r}
+sessioninfo::session_info()
+```

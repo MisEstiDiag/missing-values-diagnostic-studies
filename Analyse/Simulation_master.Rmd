@@ -1,0 +1,2051 @@
+---
+title: 'Comparison of methods to handle missing values in a continuous index test in a diagnostic study – a simulation study (Additional file 4)'
+author: 
+ - Katharina Stahlmann, University Medical Center Hamburg-Eppendorf<br>  Institute of Medical Biometry and Epidemiology, k.stahlmann@uke.de
+ - Bastiaan Kellerhuis, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands
+ - Johannes B. Reitsma, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands
+ - Nandini Dendukuri, Department of Medicine, McGill University, Montreal, Canada
+ - Antonia Zapf, University Medical Center Hamburg-Eppendorf<br>  Institute of Medical Biometry and Epidemiology
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    depth: 6
+    fig_caption: no
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+  word_document:
+    toc: yes
+editor_options:
+  chunk_output_type: console
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+# set global chunk options
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                     fig.width = 12,
+                      fig.asp = 0.8 ,
+                       out.width = "120%")
+
+# this options for word export
+#knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE,
+ #                     fig.width = 12,
+ #                     fig.asp = 0.8 ,
+   #                    out.width = "120%")
+
+options(stringsAsFactors = F)
+# always show NA is there is any in the table function
+table = function (..., useNA = 'ifany') base::table(..., useNA = useNA)
+
+options(scipen=999)
+
+```
+
+# Settings
+
+## Packages
+
+```{r packages}
+library(ggplot2)
+library(writexl)
+library(ggpubr)
+library(RColorBrewer)
+library(dplyr)
+library(arsenal)
+library(rsimsum)
+library(gt)
+library(gtsummary)
+library(lme4)
+library(lmerTest)
+```
+
+```{r load functions}
+# set global controls for tableby command
+mycontrols = tableby.control(numeric.stats=c("Nmiss","mean", "sd", "medianq1q3", "range"),
+                             cat.stats=c("Nmiss", "countpct"), 
+                             stats.labels=list(Nmiss='Missing values', medianq1q3='Median (Q1, Q3)'),
+                             test = F)
+
+
+#display.brewer.all(n=8, type="qual", select=NULL, exact.n=TRUE, colorblindFriendly=TRUE)
+colors <- brewer.pal(8, "Dark2")
+
+```
+
+```{r}
+tabno <- 0
+figno <- 0
+```
+
+
+# Simulation 
+
+## Set up simulation parameters
+
+```{r simulation setup}
+nsim <- 1000
+
+grid = expand.grid(
+  sim = 1:nsim 
+  , N = c(100, 500, 1000)
+  , p = c(0.1, 0.3, 0.5)
+  , AUC_0 = c(0.7, 0.85, 0.9)
+  , r = c(0.2, 0.5, 0.9)
+  , pm = c(0.1, 0.3, 0.5)
+  , mech = c("MCAR", "MAR", "MNAR")
+)
+
+# methods to be compared
+methods <- c("CCA", "MI2", "MIB2", "HDEL", "KER", "mice", "mix", "AIPW")
+tabno <- tabno+1
+title <- paste0("Table ", tabno, ". Overview of simulation parameters")
+  
+  
+Abbreviation = names(grid)
+setup <- data.frame(
+  Abbreviation = names(grid),
+  Parameter = c("Number of simulations", "Sample size", "prevalence of the target condition", "True AUC", "Correlation between index test and covariates", "proportion of missing values", "Missingness Mechanism"),
+  Values = c(
+    nsim,
+    sapply(Abbreviation[2:length(Abbreviation)], function(x) (paste(unique(grid[,x]), collapse = ',')))
+  )
+)  
+setup %>%
+  gt() %>% 
+  tab_style(style = cell_text(weight = "bold"), locations = cells_column_labels(columns=c("Abbreviation", "Parameter", "Values"))) %>%
+  tab_header(
+    title = title
+  )
+```
+
+## Description of methods
+
+Table `r tabno <- tabno+1` `r tabno`. Overview of methods
+
+
+| Methods     |                                                                                 |
+|:------------|:--------------------------------------------------------------------------------|
+| CCA       	| Complete case analysis                                                          |
+| HDEL        | Hot Deck Empirical Likelihood Approach (Wang and Qin 2012, 2014)                |
+| MI2       	| Multiple Imputation using prediction and propensity score (Long et al. 2011a)   |
+| MIB2        | MI2 + bootstrap step for calculating confidence intervals (Long et al. 2011a)   |
+| mice        | Multiple Imputation using chained equations (van Buuren et al. 2011)            |
+| mix         | Multiple Imputation using joint modelling (Schafer 2022)                        |
+| KER         | Kernel-based Inverse Probability Weighting (Bianco et al. 2023)                 |
+| AIPW        | Augmented Inverse Probability Weighting (Long et al. 2011b)                     |
+
+### CCA 
+We compared the above explained methods with the standard complete case analysis (CCA) which excludes all subjects with missing values in the index test (or reference standard) from the calculations. For the application of the CCA, we used the ci.auc function of the pROC package (Robin et al. 2011).
+
+### HDEL 
+The HDEL method was developed by Wang and Qin (2012; 2014) and provided by them as R code upon request. First, hot deck imputation is performed under the MCAR assumption. The AUC is then estimated based on the imputed dataset. For the ROC, sensitivity values for some FPR are calculated. Subsequently, empirical likelihood confidence intervals are estimated for the AUC and the sensitivities using the scaled chi-square distribution. For calculating the CI of the sensitivities, Wang and Qin (2012; 2014) proposed the imputation-based profile empirical likelihood and the imputation-based hybrid bootstrap empirical likelihood approach. We only used the former approach in our simulation study, as the code for the latter was not available. This method assumes missing values to be MCAR. 
+
+### MI2 and MIB2
+Both methods MI2 and MIB2 follow a nonparametric multiple imputation approach and were developed by Long et al. (2011a). They apply k-nearest neighbor matching based on a propensity and prediction score, which can be used if index test values are MAR. Firstly, the propensity of missingness of the index test is modeled by means of a logistic regression using available covariates (in this simulation study x2, x3, x4) as predictors. Secondly, a linear regression is performed to model the observed index test values against available covariates (in this simulation study x2, x3, x4). Based on the model estimates, a prediction score and a propensity score are computed for each subject and standardized to mean=0 and standard deviation SD=1. A distance measure between subjects with missing and observed index test values is computed by combining both scores. Different weights can be assigned to both scores (in sum equal to 1). In this simulation study, equal weights (each 0.5) were used following Long et al. (2011a). Stratified by target condition, missing values are subsequently multiply imputed with a random draw of one of the k nearest neighbors (subjects with the shortest distance and observed index test values). The AUC, ROC, and their CIs are estimated and pooled according to Rubins rules (Rubin 1987). The combination of both the propensity and prediction models results in a doubly robust model. That is to say, at least one model must be correctly specified to be consistent (Long et al. 2011a). The MIB2 method further includes a bootstrap step before the estimation of both models to reflect the uncertainty in estimating the model parameters. Both methods are only available as R code. Following Long et al. (2011a), the number of nearest neighbors was set to 3, and the number of imputation datasets to 10.
+
+### Mice 
+Multiple imputations by chained equations is a standard multiple imputation approach that employs fully conditional specification via Markov Chain Monte Carlo methods. It can be accessed through the mice package in R (van Buuren and Groothuis-Oudshoorn 2011). For each variable with missing data, conditional densities are specified. Multivariate imputation is performed variable-by-variable and iterating over the conditional densities. We selected predictive mean matching as imputation method since this is the default method for numeric variables in mice and performs well overall (van Buuren and Groothuis-Oudshoorn 2011). As Bayesian linear regression may be more efficient for normally distributed data (van Buuren 2018), we include mice using this imputation method (called norm) in addition to mice with PMM in supplemental simulation scenarios. We set the number of iterations to 10 and generated 20 imputation datasets for our simulation as Schafer and Graham (2002) deemed 20 imputations to remove most noise in the estimates. All variables (index test, the three covariates and the reference standard) without interaction terms were included in the imputation model. After imputation, estimators for the AUC and sensitivities for different FPR values are pooled by Rubin’s rules (Rubin 1987).
+
+### Mix
+In contrast to the previous packages, the mix package by Schafer (2022) employs joint modeling under an unrestricted general location model for mixed data. After defining the multivariate distribution for the missing data, missing values are imputed from their conditional distribution using Markov chain Monte Carlo methods. This approach is described in Schafer (2022). For this simulation study, we used the same settings as Schafer (2022) and set the number of iterations to 1,000 and the number of steps to 100. In congruence with the MI approach described above, we used all variables without interaction terms in the imputation model. 
+
+### KER 
+In addition, Bianco et al. (2023) compared the CONV method with a kernel-based approach according to Pulit (2016) which was extended by inverse probability weighting. Thereby, they constructed pseudo observations and estimated a propensity model via a logistic regression using available covariates (here x2, x3, x4). Upon request, the authors provided this method as R code.
+
+### AIPW 
+Long et al. (2011b) proposed a doubly robust augmented inverse probability method that is applicable for missing index test values under MAR. Similar to the MI2 and MIB2 methods, the propensity of missingness of the index test is modeled through a logistic regression using available covariates (in this simulation study x2, x3, x4) as predictors. Then, a linear regression is performed to model the observed index test values against available covariates (here x2, x3, x4). The AUC is a weighted average of the linear regression and the inverse probability (propensity score) estimator. Its CI is computed using bootstrap (200 bootstrap samples). Long et al. (2011b) additionally proposed a sensitivity analysis to investigate MNAR. Unfortunately, their original code was not available. However, the code was included in the code of Cheng and Tang (2020) as they used the AIPW method under MAR for comparison.  
+
+## Conduct the simulation
+
+As some methods take much time to run, we decided to split the simulation study in two parts. First, the scenarios of the 1st grid (grid1) are run and then the scenarios of the 2nd and 3rd (grid2, grid3) are run (see simulation program for details). For this purpose, the seed for the parallel loop was set to 5273 and to 4730xi for data generation for the first simulation run and to 952 and 810xi for the second simulation run. As the scenarios of the first and second part still needed too much time, we did run some methods separately. We cannot conduct the simulation programs within this Rmarkdown file, as they were executed on a high performance cluster. However, we provide the R programs and the results of the simulations to enable reproduction.   
+
+
+```{r load_results1}
+
+# Result of Part 1
+
+data <- c("results_part1", "results_micemix", "part1_aipw1", "part1_aipw2")
+list_part1 <- list()
+
+for (i in 1:length(data)) {
+  
+  load(file = paste0("./Analyse/hpc/Simulation_data/", data[i], ".Rdata"))
+  res$id <- paste(res$sim, res$scenario, sep = "_")
+  if (data[i]=="part1_aipw2") {
+    list_part1[[i-1]] <- rbind(list_part1[[i-1]], res) # part 1 of method AIPW was divided in to programs: must be combined first
+    assign(paste0("part1_", i-1), list_part1[[i-1]])
+  } else{
+    list_part1[[i]] <- res
+    assign(paste0("part1_", i), list_part1[[i]])
+  }
+  
+}
+
+# merge results by id
+res_part1 <- merge(part1_1, part1_2[,c(10:ncol(part1_2))], by="id")
+res_part1 <- merge(res_part1, part1_3[,c(10:ncol(part1_3))], by="id")
+
+# --> reihenfolge ändert sich!!!!
+res_part1 <- res_part1 %>%
+  arrange(scenario, sim) %>%
+  select(-id)
+
+```
+
+```{r load_results2}
+# Part 2
+data <- c("results_part2_1", "results_part2_2", "results_part2_3", "results_micemix2_1", "results_micemix2_2", "results_micemix2_3", "results_micemix2_4", "part2_aipw1", "part2_aipw2", "part2_aipw3", "part2_aipw4", "part2_aipw5", "part2_aipw6", "part2_aipw7")
+list_part2 <- list()
+
+for (i in 1:length(data)) {
+  
+  load(file = paste0("./Analyse/hpc/Simulation_data/", data[i], ".Rdata"))
+  res$id <- paste(res$sim, res$scenario, sep = "_")
+  list_part2[[i]] <- res
+  assign(paste0(data[i]), list_part2[[i]])
+}
+
+# part 2 of several methods was divided in to multiple programs: must be combined first
+part2_1 <- rbind(results_part2_1, results_part2_2, results_part2_3)
+part2_2 <- rbind(results_micemix2_1, results_micemix2_2, results_micemix2_3, results_micemix2_4)
+part2_3 <- rbind(part2_aipw1, part2_aipw2, part2_aipw3, part2_aipw4, part2_aipw5, part2_aipw6, part2_aipw7)
+
+# merge results by id
+res_part2 <- merge(part2_1, part2_2[,c(10:ncol(part2_2))], by="id")
+res_part2 <- merge(res_part2, part2_3[,c(11:ncol(part2_3))], by="id") # without column row.grid
+
+# --> reihenfolge ändert sich!!!!
+res_part2 <- res_part2 %>%
+  arrange(scenario, sim) %>%
+  select(-id)
+
+## combine both parts
+res <- rbind(res_part1, res_part2)
+
+#include a new number for the scenario (otherwise there would be some scenario numbers twice)
+res$scenario <- rep(1:(nrow(res)/nsim), each = nsim)
+res <- rename(res, r = korr)
+
+```
+
+# Calculate Performance parameters
+
+The following performance parameter will be calculated: number of missing values, bias, root mean squared error, empirical standard deviation, coverage probability and power as well as the respective monte carlo standard errors for each performance parameter. 
+
+```{r}
+source("./Analyse/Simulation_performance3.R")
+# input: res (file with simulation results as dataframe)
+# out: raw_res (res + step 1 of performance calculation -> 1 row for each simulation run), scenario_res (dataframe with performance parameters, -> 1 row for each scenario aggregated over the iterations)
+
+# save results in excel file
+write_xlsx(scenario_res, path = "./Analyse/Ergebnisse/res_sim_performance.xlsx")
+```
+
+# Results
+
+## Running time and missing values 
+
+```{r, results='asis'}
+
+# rearrange the scenario_res table columns, so that performance estimate and its MC standard error are located side by side
+vars=list()
+for (i in 1:length(methods)){
+  vars_i <- grep(methods[i], names(scenario_res), value = T)
+  vars[[i]] <- vars_i
+}
+vars_order <- unlist(vars)
+dat_table1 <- scenario_res[,c(8,1:6)]
+dat_table2 <- scenario_res[,vars_order]
+dat_table <- cbind(dat_table1, dat_table2)
+rownames(dat_table) <- NULL
+
+# label selected variables in dat_table
+dat_table <- dat_table %>%
+  sjlabelled::var_labels(
+    scenario = "Scenario",
+    N = "Sample size",
+    p = "Prevalence of the target condition",
+    AUC_0 = "True AUC",
+    r = "Correlation",
+    pm = "Proportion of missing values",
+    mech = "Missingness mechanism",
+    av.time.AUC.CCA = "Average running time for CCA",
+    av.time.AUC.MI2 = "Average running time for MI2",
+    av.time.AUC.MIB2 = "Average running time for MIB2",
+    av.time.AUC.HDEL = "Average running time for HDEL",
+    av.time.AUC.mice = "Average running time for mice",
+    av.time.AUC.mix = "Average running time for mix",
+    av.time.AUC.AIPW = "Average running time for AIPW",
+    av.time.AUC.KER = "Average running time for KER"
+  )
+
+```
+
+Table `r tabno <- tabno+1` `r tabno`. Overview of average running time (in seconds) summarized across all scenarios, stratified by sample size
+
+```{r, results='asis'}
+
+# table with running time summarized across all scenarios 
+time <- grep("time", names(dat_table), value = TRUE)
+summary(tableby(N ~ ., data = dat_table[,c("N",time)], control = mycontrols), pfootnote = T) 
+
+```
+
+Table `r tabno <- tabno+1` `r tabno`. Overview of the sum of missing values for the estimated AUC summarized over all repetitions and scenarios stratified by N, p and pm (only combinations with missing values in at least one method are displayed; Table 3 in the manuscript)
+
+```{r, results='asis'}
+
+# this chunk produces Table 3 in the manuscript
+
+miss <- grep("Missing", names(dat_table), value = TRUE)
+dat_table_miss2 <- dat_table %>%
+  select(c(1:8, all_of(miss))) %>%
+  group_by(N, p, pm) %>%
+  summarise(
+    across(miss, list(sum=sum)),
+    n = n()
+    ) %>%
+  mutate(
+    rowmiss = rowSums(across(starts_with("Missing_")), na.rm=TRUE) ,
+    CCA = paste0(Missing_AUC.AUC.CCA_sum,  " (", round(Missing_AUC.AUC.CCA_sum/(n*1000)*100,2), "%)"),
+    MI2 = paste0(Missing_AUC.AUC.MI2_sum,  " (", round(Missing_AUC.AUC.MI2_sum/(n*1000)*100,2), "%)"),
+    MIB2 = paste0(Missing_AUC.AUC.MIB2_sum,  " (", round(Missing_AUC.AUC.MIB2_sum/(n*1000)*100,2), "%)"),
+    HDEL = paste0(Missing_AUC.AUC.HDEL_sum,  " (", round(Missing_AUC.AUC.HDEL_sum/(n*1000)*100,2), "%)"),
+    KER = paste0(Missing_AUC.AUC.KER_sum,  " (", round(Missing_AUC.AUC.KER_sum/(n*1000)*100,2), "%)"),
+    mice = paste0(Missing_AUC.AUC.mice_sum,  " (", round(Missing_AUC.AUC.mice_sum/(n*1000)*100,2), "%)"),
+    mix = paste0(Missing_AUC.AUC.mix_sum, " (", round(Missing_AUC.AUC.mix_sum/(n*1000)*100,2), "%)"),
+    AIPW = paste0(Missing_AUC.AUC.AIPW_sum,  " (", round(Missing_AUC.AUC.AIPW_sum/(n*1000)*100,2), "%)")
+  ) %>%
+  filter(rowmiss>0) %>% # only keep combinations with missing values in at least one method
+  select(c(N,p,pm,CCA,MI2,MIB2,HDEL,KER,mice,mix,AIPW)) 
+
+
+table <- dat_table_miss2 %>%
+  gt(groupname_col = c("N"), row_group_as_column = TRUE) %>%
+  tab_row_group(
+    label = "Sample size = 100",
+    rows = N==100
+  ) %>%
+  tab_row_group(
+    label = "Sample size = 500",
+    rows = N==500
+  ) %>%
+  tab_row_group(
+    label = "Sample size = 1000",
+    rows = N==1000
+  )
+
+table
+
+```
+
+
+```{r, results='asis', eval=FALSE}
+tabno <- tabno+1
+
+# show table for bias
+bias <- grep("bias", names(dat_table), value = FALSE)
+knitr::kable(dat_table[,c(1:7,bias)], "simple", 
+             col.names = gsub("[.]", " ", names(dat_table[,c(1:7,bias)])), 
+             caption = paste0("Table", tabno, ". Bias and its Monte Carlo Standard Error for each method"),
+             digits = 4, format.args = list(scientific = FALSE))
+
+# show table for RMSE 
+tabno <- tabno+1
+mse <- grep("MSE", names(dat_table), value = FALSE)
+knitr::kable(dat_table[,c(1:7,mse)], "simple", 
+             col.names = gsub("[.]", " ", names(dat_table[,c(1:7,mse)])),
+             caption = paste0("Table", tabno, ". Root mean squared error and its Monte Carlo Standard Error for each method"),
+             digits = 4, format.args = list(scientific = FALSE))
+
+# show table for empSE
+tabno <- tabno+1
+empse <- grep("empSE", names(dat_table), value = FALSE)
+knitr::kable(dat_table[,c(1:7,empse)], "simple", 
+             col.names = gsub("[.]", " ", names(dat_table[,c(1:7,empse)])),
+             caption = paste0("Table", tabno, ". Empirical Standard Error and its Monte Carlo Standard Error for each method"),
+             digits = 4, format.args = list(scientific = FALSE))
+
+# show table for coverage
+tabno <- tabno+1
+cov <- grep("cov", names(dat_table), value = FALSE)
+knitr::kable(dat_table[,c(1:7,cov)], "simple", 
+             col.names = gsub("[.]", " ", names(dat_table[,c(1:7,cov)])),
+             caption = paste0("Table", tabno, ". Coverage and its Monte Carlo Standard Error for each method"),
+             digits = 4, format.args = list(scientific = FALSE))
+
+# show table for power
+tabno <- tabno+1
+power <- grep("power", names(dat_table), value = FALSE)
+knitr::kable(dat_table[,c(1:7,power)], "simple", 
+             col.names = gsub("[.]", " ", names(dat_table[,c(1:7,power)])),
+             caption = paste0("Table", tabno, ". Power and its Monte Carlo Standard Error for each method"),
+             digits = 4, format.args = list(scientific = FALSE))
+
+```
+
+
+## Graphical display of performance results
+
+### Bias
+
+```{r}
+
+# reshape from wide to long (only one column for bias and estimated AUC, respectively)
+performparam <- list(auc_vars,names1)
+performnames <- c("AUC","Bias")
+dat_fig <- raw_res[,c("scenario","N","p","AUC_0","r","pm","mech",auc_vars,names1)]
+dat_fig$id <- seq_along(1:nrow(dat_fig))
+dat_long <- reshape(dat_fig, varying=performparam, v.names = performnames, times = methods, 
+                    idvar = "id", direction = "long")
+dat_long$scenario <- as.factor(dat_long$scenario)
+colnames(dat_long)[colnames(dat_long) == "time"] <- "Method" # rename method variable
+```
+
+```{r}
+# bias plot for a specific combination of parameters
+# MCAR
+idx1 <- which(dat_long$mech == "MCAR" & dat_long$N==100 & dat_long$p==0.1 & dat_long$pm!=0.3 & dat_long$r!=0.5 & dat_long$AUC_0!=0.9) #  limits = c(-0.4,0.4)
+idx2 <- which(dat_long$mech == "MCAR" & dat_long$N==100 & dat_long$p==0.5 & dat_long$pm!=0.3 & dat_long$r!=0.5 & dat_long$AUC_0!=0.9) #  limits = c(-0.3,0.3)
+
+idx3 <- which(dat_long$mech == "MAR" & dat_long$N==100 & dat_long$p!=0.3  & dat_long$pm!=0.3 & dat_long$r!=0.5 & dat_long$AUC_0!=0.9)#  limits = c(-0.2,0.2)
+idx4 <- which(dat_long$mech == "MAR" & dat_long$N==500 & dat_long$p!=0.3  & dat_long$pm!=0.3 & dat_long$r!=0.5 & dat_long$AUC_0!=0.9) #  limits = c(-0.15,0.15)
+
+idx5 <- which(dat_long$mech == "MNAR" & dat_long$N==100 & dat_long$p!=0.3 & dat_long$pm!=0.3 & dat_long$r!=0.5 & dat_long$AUC_0!=0.9)
+idx6 <- which(dat_long$mech == "MNAR" & dat_long$N==500 & dat_long$p!=0.3 & dat_long$pm!=0.3 & dat_long$r!=0.5 & dat_long$AUC_0!=0.9)
+
+idxlist <- list(idx1, idx2, idx3, idx4, idx5, idx6)
+limits <- list(
+  c(-0.3,0.3),
+  c(-0.25,0.25),
+  c(-0.2,0.2),
+  c(-0.12,0.12),
+  c(-0.3,0.3),
+  c(-0.15,0.15)
+)
+title <- c("Bias for MCAR, p=0.1 and N=100", "Bias for MCAR, p=0.5 and N=100",
+           "Bias for MAR and N=100", "Bias for MAR and N=500",
+           "Bias for MNAR and N=100", "Bias for MNAR and N=500")
+
+plotlist <- list()
+for (i in 1:length(idxlist)) {
+  plotlist[[i]] <- ggplot(dat_long[idxlist[[i]],], aes(x = Method, y = Bias)) +
+                          geom_violin(fill = colors[1], trim=FALSE) +
+                          stat_summary(fun=mean, geom="point", size=2, color=colors[6]) +
+                          xlab("Method") + ylab("Bias") +
+                          geom_hline(yintercept=0) +
+                          scale_y_continuous(limits = limits[[i]]) +
+                          theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+                          facet_grid(p + r ~ AUC_0 + pm, labeller = label_context) +
+                          ggtitle(title[i]) +
+                          labs(caption = paste0("The y-axis was cut at ", limits[[i]][1], " and ",limits[[i]][2], " to enable comparison across the panels.")) +
+                          theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              plot.caption = element_text(hjust = 0))
+}
+
+```
+
+MCAR 
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist[[1]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist[[2]]
+```
+
+MAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist[[3]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist[[4]]
+```
+
+MNAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist[[5]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist[[6]]
+```
+
+
+```{r Plots for publication bias, eval=FALSE}
+
+### this produces Figure 2 in the manuscript ###
+
+idx3 <- which(dat_long$mech == "MAR" & dat_long$N==100 & dat_long$p!=0.3  & dat_long$pm!=0.3 & dat_long$r!=0.5 & dat_long$AUC_0!=0.9)#  limits = c(-0.2,0.2)
+idx4 <- which(dat_long$mech == "MAR" & dat_long$N==500 & dat_long$p!=0.3  & dat_long$pm!=0.3 & dat_long$r!=0.5 & dat_long$AUC_0!=0.9) #  limits = c(-0.15,0.15)
+
+
+idxlist <- list(idx3, idx4)
+limits <- list(
+  c(-0.2,0.2),
+  c(-0.12,0.12)
+)
+
+plot_pub1 <- list()
+for (i in 1:length(idxlist)) {
+  plot_pub1[[i]] <- ggplot(dat_long[idxlist[[i]],], aes(x = Method, y = Bias)) +
+                          geom_violin(fill = colors[1], trim=FALSE) +
+                          stat_summary(fun=mean, geom="point", size=2, color=colors[6]) +
+                          xlab("Method") + ylab("Bias") +
+                          geom_hline(yintercept=0) +
+                          scale_y_continuous(limits = limits[[i]]) +
+                          theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+                          facet_grid(p + r ~ AUC_0 + pm, labeller = label_context) +
+                          theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 14),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14))
+}
+
+fig1 <- ggarrange(plot_pub1[[1]], plot_pub1[[2]], labels=c("A","B"), ncol=2)
+fig1
+ggsave("./Analyse/Ergebnisse/Plots/Bias_MAR_pub.png", plot=fig1, width = 20, height = 10)
+
+```
+
+```{r comparison with supplemental MNAR simulation scenario}
+
+table_b <- dat_long %>%
+  filter(N==500 & r==0.5 & AUC_0==0.85 & pm==0.3 & mech=="MNAR" & (p==0.1 | p==0.5)) %>%
+  select(Method, Bias,p) %>%
+  tbl_strata(strata=p, .tbl_fun =  ~ .x %>% 
+             tbl_summary(by=Method,
+                           type = list(all_continuous()~"continuous2"),
+                           statistic = list(all_continuous() ~ c("{mean} ({sd})",
+                                                    "{median} ({p25}, {p75})", 
+                                                    "[{min}, {max}]")),
+                           digits = list(all_continuous() ~4)))
+tabno <- tabno+1
+tab_b <- table_b %>%
+  as_gt() %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Summary statistics for bias for N=500, r=0.5, AUC_0=0.85, pm=0.3 and mech=MNAR")
+  )
+tab_b
+```
+
+
+```{r}
+# reshape summary results for further plots 
+
+performparam <- list(names1,names2,names3,names4,names13,names5,names6,names7,names8,names9,names14,names10,names11)
+performnames <- c("Bias","RMSE","empirical_SE","Coverage","be_coverage", "Power","MCE_bias","MCE_MSE","MCE_empSE","MCE_cov","MCE_be_cov", "MCE_power", "av_time")
+scenario_res$id <- seq_along(1:nrow(scenario_res))
+res_long <- reshape(scenario_res, varying=performparam, v.names = performnames, times = methods, 
+                    idvar = "id", direction = "long")
+colnames(res_long)[colnames(res_long) == "time"] <- "Method" # rename method variable
+
+# label selected variables in res_long
+res_long <- res_long %>%
+  sjlabelled::var_labels(
+    MCE_bias = "Monte Carlo Standard Error for Bias",
+    MCE_MSE = "Monte Carlo Standard Error for Mean Squared Error", 
+    MCE_cov = "Monte Carlo Standard Error for Coverage Probability", 
+    MCE_be_cov = "Monte Carlo Standard Error for bias-eliminated Coverage Probability", 
+    MCE_power = "Monte Carlo Standard Error for Power"
+  )
+
+# save specific MNAR scenarios to compare them with the MNAR supplemental scenarios
+mnar_test <- res_long[which(res_long$pm==0.3 & res_long$mech=="MNAR" & res_long$N!=100 & res_long$AUC_0==0.85 & res_long$r==0.5),]
+save(mnar_test, file="./Analyse/mnar_test.RData")
+
+```
+
+```{r}
+## plots for summary performance measures ##
+idx1 <- which(res_long$mech == "MCAR" & res_long$p!=0.5 & res_long$AUC_0!=0.9 & res_long$r!=0.5 & res_long$N==100)
+idx2 <- which(res_long$mech == "MCAR" & res_long$p!=0.5 & res_long$AUC_0!=0.9 & res_long$r!=0.5 & res_long$N==500)
+
+idx3 <- which(res_long$mech == "MAR" & res_long$p!=0.5 & res_long$AUC_0!=0.9 & res_long$r!=0.5 & res_long$N==100)
+idx4 <- which(res_long$mech == "MAR" & res_long$p!=0.5 & res_long$AUC_0!=0.9 & res_long$r!=0.5 & res_long$N==500 )
+
+idx5 <- which(res_long$mech == "MNAR" & res_long$p!=0.5 & res_long$AUC_0!=0.9 & res_long$N==100 & res_long$r!=0.5)
+idx6 <- which(res_long$mech == "MNAR" & res_long$p!=0.5 & res_long$AUC_0!=0.9 & res_long$N==500 & res_long$r!=0.5)
+
+idxlist <- list(idx1, idx2, idx3, idx4, idx5, idx6)
+
+```
+
+```{r lineplot.bias}
+title <- c("Absolute bias for MCAR and N=100", "Absolute bias for MCAR and N=500",
+           "Absolute bias for MAR and N=100", "Absolute bias for MAR and N=500", 
+           "Absolute bias for MNAR and N=100", "Absolute bias for MNAR and N=500")
+
+# line plot for bias
+plotlist2.2 <- list()
+for (i in 1:length(idxlist)) {
+  plotlist2.2[[i]] <- ggplot(res_long[idxlist[[i]],], aes(x = pm, y = abs(Bias), group = Method)) +
+                      geom_line(aes(color=Method, linetype = Method), linewidth=1) +
+                      scale_color_manual(values = colors) +
+                      scale_x_continuous(breaks = c(0.1,0.3,0.5)) +
+                      xlab("Proportion of missing values") + ylab("Absolute bias") +
+                      facet_grid(r + N  ~ AUC_0 + p, labeller = label_both) + 
+                      ggtitle(title[i]) +
+                          theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14))
+}
+
+```
+
+MCAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2.2[[1]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2.2[[2]]
+```
+
+MAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2.2[[3]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2.2[[4]]
+```
+
+MNAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2.2[[5]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2.2[[6]]
+```
+
+### Root mean squared error (RMSE)
+
+```{r lineplot.rmse}
+title <- c("RMSE for MCAR and N=100", "RMSE for MCAR and N=500",
+           "RMSE for MAR and N=100", "RMSE for MAR and N=500", 
+           "RMSE for MNAR and N=100", "RMSE for MNAR and N=500")
+
+# line plot for RMSE
+plotlist2 <- list()
+for (i in 1:length(idxlist)) {
+  plotlist2[[i]] <- ggplot(res_long[idxlist[[i]],], aes(x = pm, y = RMSE, group = Method)) +
+                      geom_line(aes(color=Method, linetype = Method), linewidth=1) +
+                      scale_color_manual(values = colors) +
+                      scale_x_continuous(breaks = c(0.1,0.3,0.5)) +
+                      xlab("Proportion of missing values") + ylab("Root mean squared error") +
+                      facet_grid(r + N  ~ AUC_0 + p, labeller = label_both) + 
+                      ggtitle(title[i]) +
+                          theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14))
+}
+```
+
+MCAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2[[1]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2[[2]]
+```
+
+MAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2[[3]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2[[4]]
+```
+
+MNAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2[[5]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist2[[6]]
+```
+
+
+```{r Plots for publication RMSE, eval=FALSE}
+
+### this produces Figure 3 in the manuscript ###
+
+idx3 <- which(res_long$mech == "MAR" & res_long$p!=0.5 & res_long$AUC_0!=0.9 & res_long$r!=0.5 & res_long$N==100)
+idx4 <- which(res_long$mech == "MAR" & res_long$p!=0.5 & res_long$AUC_0!=0.9 & res_long$r!=0.5 & res_long$N==500 )
+
+
+ plot_pub2.1 <- ggplot(res_long[idx3,], aes(x = pm, y = RMSE, group = Method)) +
+                      geom_line(aes(color=Method, linetype = Method), linewidth=1) +
+                      scale_color_manual(values = colors) +
+                      scale_x_continuous(breaks = c(0.1,0.3,0.5)) +
+                      xlab("Proportion of missing values") + ylab("Root mean squared error") +
+                      facet_grid(r   ~ AUC_0 + p, labeller = label_both, scales="free") + 
+                          theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 14),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              legend.position = "none",
+                              axis.text.x = element_text(angle = 45, hjust = 1))
+
+plot_pub2.2 <- ggplot(res_long[idx4,], aes(x = pm, y = RMSE, group = Method)) +
+                      geom_line(aes(color=Method, linetype = Method), linewidth=1) +
+                      scale_color_manual(values = colors) +
+                      scale_x_continuous(breaks = c(0.1,0.3,0.5)) +
+                      xlab("Proportion of missing values") + ylab("Root mean squared error") +
+                      facet_grid(r   ~ AUC_0 + p, labeller = label_both, scales="free") + 
+                          theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 14),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              axis.text.x = element_text(angle = 45, hjust = 1))
+
+fig2 <- ggarrange(plot_pub2.1, plot_pub2.2, labels=c("A","B"), ncol=2)
+fig2
+ggsave("./Analyse/Ergebnisse/Plots/RMSE_MAR_pub.png", width = 20, height = 10)
+
+```
+
+
+### Coverage probability
+
+```{r}
+
+# calculate 95% Monte carlo CI for coverage
+res_long$MC_cov_ciu <- res_long$Coverage+1.96*res_long$MCE_cov
+res_long$MC_cov_cil <- res_long$Coverage-1.96*res_long$MCE_cov
+
+# variable indicating whether bias is "too high" (bias>5%)
+res_long$rel_bias <- (res_long$Bias/res_long$AUC_0)*100 # relative bias in %
+res_long$bias_cut <- as.factor(if_else(res_long$rel_bias>=5 | res_long$rel_bias<=(-5), "too biased (>=5%)", "acceptable biased"))
+
+idx1 <- which(res_long$mech == "MCAR" & res_long$N==100 & res_long$r!=0.5 & res_long$AUC_0!=0.85 & res_long$p!=0.3 & res_long$pm!=0.3)
+idx2 <- which(res_long$mech == "MCAR" & res_long$N==500 & res_long$r!=0.5 & res_long$AUC_0!=0.85 & res_long$p!=0.3 & res_long$pm!=0.3)
+
+idx3 <- which(res_long$mech == "MAR" & res_long$N==100 & res_long$r!=0.5 & res_long$AUC_0!=0.85 & res_long$p!=0.3 & res_long$pm!=0.3)
+idx4 <- which(res_long$mech == "MAR" & res_long$N==500 & res_long$r!=0.5 & res_long$AUC_0!=0.85 & res_long$p!=0.3 & res_long$pm!=0.3)
+
+idx5 <- which(res_long$mech == "MNAR" & res_long$N==100 & res_long$r!=0.5 & res_long$AUC_0!=0.85 & res_long$p!=0.3 & res_long$pm!=0.3)
+idx6 <- which(res_long$mech == "MNAR" & res_long$N==500 & res_long$r!=0.5 & res_long$AUC_0!=0.85 & res_long$p!=0.3 & res_long$pm!=0.3)
+
+idxlist <- list(idx1, idx2, idx3, idx4, idx5, idx6)
+title <- c("Coverage for MCAR and N = 100", "Coverage for MCAR and N = 1000",
+           "Coverage for MAR and N = 100", "Coverage for MAR and N = 1000",
+           "Coverage for MNAR and N = 100", "Coverage for MNAR and N = 1000")
+
+# lollipop plot coverage
+plotlist3 <- list()
+for (i in 1:length(idxlist)) {
+  plotlist3[[i]] <- ggplot(res_long[idxlist[[i]],], aes(y=Method, x=Coverage, color=bias_cut)) +
+                      geom_segment( aes(y=Method, yend=Method, x=0.95, xend=Coverage)) +
+                      geom_point(size=2) +
+                      geom_vline(xintercept=0.95) +
+                      geom_text(aes(MC_cov_ciu, Method, label = ")")) +
+                      geom_text(aes(MC_cov_cil, Method, label = "(")) +
+                      facet_grid(pm + r ~ p + AUC_0, labeller = label_both) + # pm~p
+                      scale_color_grey() +
+                      ggtitle(title[i]) +
+                      labs(color="Bias categorized") +
+                      theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              legend.position = "bottom")
+}
+
+```
+
+MCAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist3[[1]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist3[[2]]
+```
+
+MAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist3[[3]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist3[[4]]
+```
+
+MNAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist3[[5]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist3[[6]]
+```
+
+
+```{r Plot for publication: Coverage, eval=FALSE}
+
+### this produces Figure 4 in the manuscript ###
+
+idx3 <- which(res_long$mech == "MAR" & res_long$N==100 & res_long$r!=0.5 & res_long$AUC_0!=0.85 & res_long$p!=0.3 & res_long$pm!=0.3)
+idx4 <- which(res_long$mech == "MAR" & res_long$N==500 & res_long$r!=0.5 & res_long$AUC_0!=0.85 & res_long$p!=0.3 & res_long$pm!=0.3)
+
+idxlist <- list(idx3, idx4)
+
+# lollipop plot coverage
+plot_pub3 <- list()
+for (i in 1:length(idxlist)) {
+  plot_pub3[[i]] <- ggplot(res_long[idxlist[[i]],], aes(y=Method, x=Coverage, , color=bias_cut)) +
+                      geom_segment( aes(y=Method, yend=Method, x=0.95, xend=Coverage)) +
+                      geom_point(size=2) +
+                      geom_vline(xintercept=0.95) +
+                      geom_text(aes(MC_cov_ciu, Method, label = ")")) +
+                      geom_text(aes(MC_cov_cil, Method, label = "(")) +
+                      scale_color_grey() +
+                      facet_grid(pm + r ~ p + AUC_0, labeller = label_both) + 
+                          theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              legend.position = "none")
+}
+
+fig3 <- ggarrange(plot_pub3[[1]], plot_pub3[[2]], labels=c("A","B"), ncol=2)
+fig3
+ggsave("./Analyse/Ergebnisse/Plots/cov_MAR_pub.png", width = 20, height = 10)
+
+```
+
+### Power 
+
+```{r}
+
+idx1 <- which(res_long$mech == "MCAR" & res_long$N!=500 & res_long$p!=0.3 & res_long$r!=0.5 & res_long$AUC_0!=0.85)
+
+idx2 <- which(res_long$mech == "MAR" & res_long$N!=500 & res_long$p!=0.3 & res_long$r!=0.5 & res_long$AUC_0!=0.85)
+
+idx3 <- which(res_long$mech == "MNAR" & res_long$N!=500 & res_long$p!=0.3 & res_long$r!=0.5 & res_long$AUC_0!=0.85)
+
+idxlist <- list(idx1, idx2, idx3)
+
+title <- c("Power for MCAR", 
+           "Power for MAR", 
+           "Power for MNAR")
+
+# lineplot for power
+plotlist4 <- list()
+for (i in 1:length(idxlist)) {
+  plotlist4[[i]] <- ggplot(res_long[idxlist[[i]],], aes(x = pm, y = Power, group = Method)) +
+                            geom_line(aes(color=Method, linetype=Method), linewidth=1) +
+                            scale_x_continuous(breaks = c(0.1,0.3,0.5)) +
+                            scale_color_manual(values = colors) +
+                            xlab("Proportion of missing values") + ylab("Power") +
+                            facet_grid(N + AUC_0 ~ p + r, labeller = label_both) +
+                            ggtitle(title[i]) +
+                            theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              legend.title = element_blank(),
+                              legend.text = element_text(size = 14),
+                              legend.position = "right")
+}
+
+```
+
+MCAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist4[[1]]
+```
+
+MAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist4[[2]]
+```
+
+MNAR
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist4[[3]]
+```
+
+```{r Plot for publication Power, eval=FALSE}
+
+### this produces Figure 5 in the manuscript ###
+
+idx2 <- which(res_long$mech == "MAR" & res_long$N!=500 & res_long$p!=0.3 & res_long$r!=0.5 & res_long$AUC_0!=0.85)
+
+# lineplot for power
+plot_pub4 <- ggplot(res_long[idx2,], aes(x = pm, y = Power, group = Method)) +
+                            geom_line(aes(color=Method, linetype=Method), linewidth=1) +
+                            scale_x_continuous(breaks = c(0.1,0.3,0.5)) +
+                            scale_color_manual(values = colors) +
+                            xlab("Proportion of missing values") + ylab("Power") +
+                            facet_grid(N + AUC_0 ~ p + r, labeller = label_both) +
+                            theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 14),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              legend.title = element_blank(),
+                              legend.text = element_text(size = 14),
+                              legend.position = "none")
+plot_pub4
+ggsave("./Analyse/Ergebnisse/Plots/Power_MAR_pub.png", width = 20, height = 10)
+
+```
+
+### Average running time
+
+```{r}
+
+idx1 <- which(res_long$N==100 &  res_long$AUC_0==0.85 & res_long$r==0.5 & res_long$p==0.3 )
+idx2 <- which(res_long$N==1000 &  res_long$AUC_0==0.85 & res_long$r==0.5 & res_long$p==0.3 )
+idxlist <- list(idx1, idx2)
+
+title <- c("Average running time for N=100", 
+           "Average running time for N=1000")
+
+# lineplot for av running time (similar for different AUCs -> across all true AUCs)
+plotlist5 <- list()
+for (i in 1:length(idxlist)) {
+  plotlist5[[i]] <- ggplot(res_long[idxlist[[i]],], aes(x = pm, y = av_time, group = Method)) +
+                            geom_line(aes(color=Method, linetype = Method), linewidth=1) +
+                            scale_x_continuous(breaks = c(0.1,0.3,0.5)) +
+                            scale_color_manual(values = colors) +
+                            xlab("Proportion of missing values") + ylab("Running time in seconds") +
+                            facet_grid(  ~ mech, labeller = label_both) +
+                            ggtitle(title[i]) +
+                            theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              legend.title = element_blank(),
+                              legend.text = element_text(size = 14),
+                              legend.position = "right")
+}
+
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist5[[1]]
+```
+
+Figure `r figno <- figno+1` `r figno`
+
+```{r}
+plotlist5[[2]]
+```
+
+
+## Overview of Monte Carlo Standard Errors
+
+Table `r tabno <- tabno+1` `r tabno`. Summary statistics of Monte Carlo Standard Errors summarized across all scenarios and iterations
+
+```{r, results='asis'}
+
+# table with MCE across all scenarios 
+summary(tableby(Method ~ ., data = res_long[,c("Method", "MCE_bias","MCE_MSE", "MCE_cov", "MCE_be_cov", "MCE_power")], control = mycontrols), pfootnote = T) 
+```
+
+
+## Nested loop plots for the "big picture"
+
+Figure `r figno <- figno+1` `r figno`. Nested loop plot of bias restricted to scenarios where the proportion of missing values in the index test is set to 50%
+
+```{r}
+# only pm=0.5
+s1 <- simsum(data = dat_long[which(dat_long$pm==0.5),], estvarname = "AUC", ref="CCA", true = "AUC_0", methodvar = "Method", by=c("AUC_0","r","p", "N","mech"))
+#summary(s1)
+
+ap <- autoplot(s1, type = "nlp", stats = "bias")
+ap + scale_color_manual(values = colors)
+```
+
+Figure `r figno <- figno+1` `r figno`. Nested loop plot of bias restricted to scenarios where the proportion of missing values in the index test is set to 50% and missingness mechanism is MAR
+
+```{r}
+# only pm=0.5 and mech=MAR
+s1 <- simsum(data = dat_long[which(dat_long$pm==0.5 & dat_long$mech=="MAR"),], estvarname = "AUC", ref="CCA", true = "AUC_0", methodvar = "Method", by=c("AUC_0","r","p", "N"))
+#summary(s1)
+
+ap <- autoplot(s1, type = "nlp", stats = "bias")
+ap + scale_color_manual(values = colors)
+
+```
+
+
+## Metamodels
+
+Linear regression models were performed separately to quantify the relative effect of the simulation factors and methods on the performance outcome. This approach is based on the paper of van Smeden et al. (2019).
+
+### Stratified by missingess mechanism and methods
+
+In the first approach, linear regression models were conducted for each method separately and stratified by missingness mechanism. The other simulation factors were included as categorical covariates in the regression models. Bias and RMSE were examined as outcome variables in separate models.
+
+
+```{r metamodel_functions, eval=TRUE}
+
+# Function for first approach with simulation parameter (without interactions)
+mm2 <- function(performance, method, mechanism) {
+  
+  data <- scenario_res %>%
+    filter(mech == mechanism) %>%
+    mutate(
+      across(c(N,p,r,pm,AUC_0), as.factor),
+      across(all_of(names1), abs)
+    )
+  
+  form <- paste0(performance, ".AUC.", method, "*100", " ~ N + p + r + AUC_0 + pm")
+  mm <- lm(as.formula(form), data=data)
+  
+  r2 <- summary(mm)$adj.r.squared
+  names(r2) <- "Adjusted R squared"
+  meth <- method
+  names(meth) <- "Method"
+  dta <- cbind(c(summary(mm)$coefficients[,1], r2),
+               c(summary(mm)$coefficients[,4], NA))
+  dta <- as.data.frame(t(dta))
+  dta <- dta %>%
+    mutate(
+      Result = if_else(is.na(`Adjusted R squared`), "P-values", "Estimate"),
+      Method = method,
+      Mechanism = mechanism
+    ) %>%
+    relocate(any_of(c("Mechanism", "Method", "Result")), .before="(Intercept)")
+  
+  return((dta))
+}
+
+# Function for first approach with simulation parameter and interactions interactions)
+mm3 <- function(performance, method, mechanism) {
+  
+  data <- scenario_res %>%
+    filter(mech == mechanism) %>%
+    mutate(
+      across(c(N,p,r,pm,AUC_0), as.factor),
+      across(all_of(names1), abs)
+    ) 
+  
+  form <- paste0(performance, ".AUC.", method, "*100", " ~ 
+                 ( N + p + r + AUC_0 + pm)^2")
+  mm <- lm(as.formula(form), data=data)
+  
+  r2 <- summary(mm)$adj.r.squared
+  names(r2) <- "Adjusted R squared"
+  meth <- method
+  names(meth) <- "Method"
+  dta <- cbind(c(summary(mm)$coefficients[,1], r2),
+               c(summary(mm)$coefficients[,4], NA))
+  dta <- as.data.frame(t(dta))
+  dta <- dta %>%
+    mutate(
+      Result = if_else(is.na(`Adjusted R squared`), "P-values", "Estimate"),
+      Method = method,
+      Mechanism = mechanism
+    ) %>%
+    relocate(any_of(c("Mechanism", "Method", "Result")), .before="(Intercept)")
+  
+  return((dta))
+}
+
+# Function for first approach with simulation parameter and interactions interactions (and backward selection)
+mm4 <- function(performance, method, mechanism) {
+  
+  data <- scenario_res %>%
+    filter(mech == mechanism) %>%
+    mutate(
+      across(c(N,p,r,pm,AUC_0), as.factor),
+      across(all_of(names1), abs)
+    )
+  
+  form <- paste0(performance, ".AUC.", method, "*100", " ~ 
+                 (N + p + r + AUC_0 + pm)^2")
+  mm <- lm(as.formula(form), data=data)
+  
+  invisible(capture.output(backward <- stats::step(mm, direction='backward')))
+  #backward$anova
+  #backward$coefficients
+  
+  r2 <- summary(backward)$adj.r.squared
+  names(r2) <- "Adjusted R squared"
+  meth <- method
+  names(meth) <- "Method"
+  dta <- cbind(c(summary(backward)$coefficients[,1], r2),
+               c(summary(backward)$coefficients[,4], NA))
+  dta <- as.data.frame(t(dta))
+  dta <- dta %>%
+    mutate(
+      Result = if_else(is.na(`Adjusted R squared`), "P-values", "Estimate"),
+      Method = method,
+      Mechanism = mechanism
+    ) %>%
+    relocate(any_of(c("Mechanism", "Method", "Result")), .before="(Intercept)")
+  
+  return((dta))
+}
+```
+
+```{r, eval=FALSE}
+# first approach without interactions; results are not shown
+
+# bias
+dta_bias2 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+  for (i in 1:length(methods)) {
+    
+      dta <- mm2("bias", methods[i], mechanism=j)
+      dta_bias2 <- rbind(dta_bias2, dta)
+    
+  }
+}
+
+tabno <- tabno+1
+tab_mm_bias2 <- dta_bias2 %>%
+  arrange(Method, Mechanism) %>%
+  gt(groupname_col = c("Method", "Mechanism")) %>%
+  row_group_order(
+    groups = c("CCA - MCAR", "CCA - MAR", "CCA - MNAR",
+               "AIPW - MCAR", "AIPW - MAR", "AIPW - MNAR",
+               "HDEL - MCAR", "HDEL - MAR", "HDEL - MNAR",
+               "KER - MCAR", "KER - MAR", "KER - MNAR",
+               "MI2 - MCAR", "MI2 - MAR", "MI2 - MNAR",
+               "MIB2 - MCAR", "MIB2 - MAR", "MIB2 - MNAR",
+               "mice - MCAR", "mice - MAR", "mice - MNAR",
+               "mix - MCAR", "mix - MAR", "mix - MNAR"
+               )
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="P-values",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Results for the metamodels with the outcome: Bias")
+  ) %>%
+  tab_footnote(
+    footnote = "Ref. (reference group): N (sample size) = 100",
+    locations = cells_column_labels(columns = c(N500, N1000))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: p (prevalence) = 0.1",
+    locations = cells_column_labels(columns = c(p0.3, p0.5))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: r (correlation) = 0.2",
+    locations = cells_column_labels(columns = c(r0.5, r0.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: AUC_0 (true AUC) = 0.7",
+    locations = cells_column_labels(columns = c(AUC_00.85, AUC_00.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: pm (proportion of missing values) = 0.1",
+    locations = cells_column_labels(columns = c(pm0.3, pm0.5))
+  ) %>%
+  tab_options(footnotes.multiline = FALSE)
+tab_mm_bias2
+
+```
+
+```{r, eval=FALSE}
+# first approach with interactions; results are not shown
+
+# bias
+dta_bias3 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+  for (i in 1:length(methods)) {
+    
+      dta <- mm3("bias", methods[i], mechanism=j)
+      dta_bias3 <- rbind(dta_bias3, dta)
+    
+  }
+}
+
+tabno <- tabno+1
+tab_mm_bias3 <- dta_bias3 %>%
+  arrange(Method, Mechanism) %>%
+  gt(groupname_col = c("Method", "Mechanism")) %>%
+  row_group_order(
+    groups = c("CCA - MCAR", "CCA - MAR", "CCA - MNAR",
+               "AIPW - MCAR", "AIPW - MAR", "AIPW - MNAR",
+               "HDEL - MCAR", "HDEL - MAR", "HDEL - MNAR",
+               "KER - MCAR", "KER - MAR", "KER - MNAR",
+               "MI2 - MCAR", "MI2 - MAR", "MI2 - MNAR",
+               "MIB2 - MCAR", "MIB2 - MAR", "MIB2 - MNAR",
+               "mice - MCAR", "mice - MAR", "mice - MNAR",
+               "mix - MCAR", "mix - MAR", "mix - MNAR"
+               )
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="P-values",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Results for the metamodels with all interaction terms with the outcome: Bias")
+  ) %>%
+  tab_footnote(
+    footnote = "Ref. (reference group): N (sample size) = 100",
+    locations = cells_column_labels(columns = c(N500, N1000))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: p (prevalence) = 0.1",
+    locations = cells_column_labels(columns = c(p0.3, p0.5))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: r (correlation) = 0.2",
+    locations = cells_column_labels(columns = c(r0.5, r0.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: AUC_0 (true AUC) = 0.7",
+    locations = cells_column_labels(columns = c(AUC_00.85, AUC_00.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: pm (proportion of missing values) = 0.1",
+    locations = cells_column_labels(columns = c(pm0.3, pm0.5))
+  ) %>%
+  tab_options(footnotes.multiline = FALSE)
+tab_mm_bias3
+
+```
+
+Bias: Backward elimination
+
+```{r}
+# first approach with backward selection; results are shown
+
+# bias
+dta_bias4 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+  for (i in 1:length(methods)) {
+    
+      dta <- mm4("bias", methods[i], mechanism=j)
+      dta_bias4 <- dta_bias4 %>%
+        bind_rows(dta)
+    
+  }
+}
+
+tabno <- tabno+1
+tab_mm_bias4 <- dta_bias4 %>%
+  arrange(Method, Mechanism) %>%
+  gt(groupname_col = c("Method", "Mechanism")) %>%
+  row_group_order(
+    groups = c("CCA - MCAR", "CCA - MAR", "CCA - MNAR",
+               "AIPW - MCAR", "AIPW - MAR", "AIPW - MNAR",
+               "HDEL - MCAR", "HDEL - MAR", "HDEL - MNAR",
+               "KER - MCAR", "KER - MAR", "KER - MNAR",
+               "MI2 - MCAR", "MI2 - MAR", "MI2 - MNAR",
+               "MIB2 - MCAR", "MIB2 - MAR", "MIB2 - MNAR",
+               "mice - MCAR", "mice - MAR", "mice - MNAR",
+               "mix - MCAR", "mix - MAR", "mix - MNAR"
+               )
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="P-values",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Results for the metamodels with interactions and backward elimination and the outcome: Bias")
+  ) %>%
+  tab_footnote(
+    footnote = "Ref. (reference group): N (sample size) = 100",
+    locations = cells_column_labels(columns = c(N500, N1000))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: p (prevalence) = 0.1",
+    locations = cells_column_labels(columns = c(p0.3, p0.5))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: r (correlation) = 0.2",
+    locations = cells_column_labels(columns = c(r0.5, r0.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: AUC_0 (true AUC) = 0.7",
+    locations = cells_column_labels(columns = c(AUC_00.85, AUC_00.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: pm (proportion of missing values) = 0.1",
+    locations = cells_column_labels(columns = c(pm0.3, pm0.5))
+  ) %>%
+  tab_options(footnotes.multiline = FALSE)
+tab_mm_bias4
+
+```
+
+
+```{r, eval=FALSE}
+# first approach without interactions; results are not shown
+
+# RMSE
+dta_RMSE2 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+  for (i in 1:length(methods)) {
+    
+    dta <- mm2("RMSE", methods[i], mechanism=j)
+    dta_RMSE2 <- rbind(dta_RMSE2, dta)
+    
+  }   
+}
+
+tabno <- tabno+1
+tab_mm_RMSE2 <- dta_RMSE2 %>%
+  arrange(Method, Mechanism) %>%
+  gt(groupname_col = c( "Method","Mechanism")) %>%
+  row_group_order(
+    groups = c("CCA - MCAR", "CCA - MAR", "CCA - MNAR",
+               "AIPW - MCAR", "AIPW - MAR", "AIPW - MNAR",
+               "HDEL - MCAR", "HDEL - MAR", "HDEL - MNAR",
+               "KER - MCAR", "KER - MAR", "KER - MNAR",
+               "MI2 - MCAR", "MI2 - MAR", "MI2 - MNAR",
+               "MIB2 - MCAR", "MIB2 - MAR", "MIB2 - MNAR",
+               "mice - MCAR", "mice - MAR", "mice - MNAR",
+               "mix - MCAR", "mix - MAR", "mix - MNAR"
+               )
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="P-values",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Results for the metamodels with the outcome: RMSE")
+  ) %>%
+  tab_footnote(
+    footnote = "Ref. (reference group): N (sample size) = 100",
+    locations = cells_column_labels(columns = c(N500, N1000))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: p (prevalence) = 0.1",
+    locations = cells_column_labels(columns = c(p0.3, p0.5))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: r (correlation) = 0.2",
+    locations = cells_column_labels(columns = c(r0.5, r0.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: AUC_0 (true AUC) = 0.7",
+    locations = cells_column_labels(columns = c(AUC_00.85, AUC_00.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: pm (proportion of missing values) = 0.1",
+    locations = cells_column_labels(columns = c(pm0.3, pm0.5))
+  ) %>%
+  tab_options(footnotes.multiline = FALSE)
+  
+tab_mm_RMSE2
+
+```
+
+```{r, eval=FALSE}
+# first approach with interactions; results are not shown
+
+dta_RMSE3 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+  for (i in 1:length(methods)) {
+    
+    dta <- mm3("RMSE", methods[i], mechanism=j)
+    dta_RMSE3 <- rbind(dta_RMSE3, dta)
+    
+  }   
+}
+
+tabno <- tabno+1
+tab_mm_RMSE3 <- dta_RMSE3 %>%
+  arrange(Method, Mechanism) %>%
+  gt(groupname_col = c( "Method","Mechanism")) %>%
+  row_group_order(
+    groups = c("CCA - MCAR", "CCA - MAR", "CCA - MNAR",
+               "AIPW - MCAR", "AIPW - MAR", "AIPW - MNAR",
+               "HDEL - MCAR", "HDEL - MAR", "HDEL - MNAR",
+               "KER - MCAR", "KER - MAR", "KER - MNAR",
+               "MI2 - MCAR", "MI2 - MAR", "MI2 - MNAR",
+               "MIB2 - MCAR", "MIB2 - MAR", "MIB2 - MNAR",
+               "mice - MCAR", "mice - MAR", "mice - MNAR",
+               "mix - MCAR", "mix - MAR", "mix - MNAR"
+               )
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="P-values",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Results for the metamodels with all interactions and the outcome: RMSE")
+  ) %>%
+  tab_footnote(
+    footnote = "Ref. (reference group): N (sample size) = 100",
+    locations = cells_column_labels(columns = c(N500, N1000))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: p (prevalence) = 0.1",
+    locations = cells_column_labels(columns = c(p0.3, p0.5))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: r (correlation) = 0.2",
+    locations = cells_column_labels(columns = c(r0.5, r0.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: AUC_0 (true AUC) = 0.7",
+    locations = cells_column_labels(columns = c(AUC_00.85, AUC_00.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: pm (proportion of missing values) = 0.1",
+    locations = cells_column_labels(columns = c(pm0.3, pm0.5))
+  ) %>%
+  tab_options(footnotes.multiline = FALSE)
+  
+tab_mm_RMSE3
+```
+
+RMSE: With backward elimination
+
+```{r}
+# first approach with interactions and backward selection; results are shown
+
+dta_RMSE4 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+  for (i in 1:length(methods)) {
+    
+    dta <- mm4("RMSE", methods[i], mechanism=j)
+    dta_RMSE4 <- dta_RMSE4 %>%
+        bind_rows(dta)
+    
+  }   
+}
+
+tabno <- tabno+1
+tab_mm_RMSE4 <- dta_RMSE4 %>%
+  arrange(Method, Mechanism) %>%
+  gt(groupname_col = c( "Method","Mechanism")) %>%
+  row_group_order(
+    groups = c("CCA - MCAR", "CCA - MAR", "CCA - MNAR",
+               "AIPW - MCAR", "AIPW - MAR", "AIPW - MNAR",
+               "HDEL - MCAR", "HDEL - MAR", "HDEL - MNAR",
+               "KER - MCAR", "KER - MAR", "KER - MNAR",
+               "MI2 - MCAR", "MI2 - MAR", "MI2 - MNAR",
+               "MIB2 - MCAR", "MIB2 - MAR", "MIB2 - MNAR",
+               "mice - MCAR", "mice - MAR", "mice - MNAR",
+               "mix - MCAR", "mix - MAR", "mix - MNAR"
+               )
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="P-values",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Results for the metamodels with all interactions and backward elimination and the outcome: RMSE")
+  ) %>%
+  tab_footnote(
+    footnote = "Ref. (reference group): N (sample size) = 100",
+    locations = cells_column_labels(columns = c(N500, N1000))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: p (prevalence) = 0.1",
+    locations = cells_column_labels(columns = c(p0.3, p0.5))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: r (correlation) = 0.2",
+    locations = cells_column_labels(columns = c(r0.5, r0.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: AUC_0 (true AUC) = 0.7",
+    locations = cells_column_labels(columns = c(AUC_00.85, AUC_00.9))
+  ) %>%
+  tab_footnote(
+    footnote = "Ref.: pm (proportion of missing values) = 0.1",
+    locations = cells_column_labels(columns = c(pm0.3, pm0.5))
+  ) %>%
+  tab_options(footnotes.multiline = FALSE)
+  
+tab_mm_RMSE4
+```
+
+### Stratified by missingness machanism but all methods in one model
+
+In the second approach, linear regression models were conducted stratified by missingness mechanism, but the methods were included as covariates in one model. The other simulation factors were also included as covariates in the regression models. Bias and RMSE were examined as outcome variables in separate models. The scenario number was included as random intercept. 
+
+
+```{r metamodel_functions2}
+# function for 2nd approach without interactions
+mm5 <- function(performance, mechanism) {
+  
+  data <- res_long %>%
+    filter(mech == mechanism) %>%
+    mutate(
+      Method2 = as.factor(Method),
+      Method2 = relevel(Method2, ref="CCA"),
+      Bias = abs(Bias)
+    )
+  form <- paste0(performance, "*100", " ~ Method2 + (1|scenario)")
+  mm <- lmer(as.formula(form), data=data)
+  summary(mm)
+  
+  #r2 <- summary(mm)$adj.r.squared
+  #names(r2) <- "Adjusted R squared"
+
+  dta <- cbind(coef(summary(mm))[,"Estimate"], coef(summary(mm))[,"Pr(>|t|)"])
+  colnames(dta) <- c("Estimate", "p-value")
+  dta <- as.data.frame(t(dta))
+ 
+  dta <- dta %>%
+    tibble::rownames_to_column("Result") %>%
+    mutate(
+      Mechanism = mechanism
+    ) %>%
+    relocate(any_of(c("Mechanism", "Result")), .before="(Intercept)") %>%
+    rename(
+      AIPW = Method2AIPW,
+      HDEL = Method2HDEL,
+      KER = Method2KER,
+      MI2 = Method2MI2,
+      MIB2 = Method2MIB2,
+      mice = Method2mice,
+      mix = Method2mix
+    )
+  
+  return(dta)
+}
+
+# function for 2nd approach with interactions
+mm6 <- function(performance, mechanism) {
+  
+  data <- res_long %>%
+    filter(mech == mechanism) %>%
+    mutate(
+      Method2 = as.factor(Method),
+      Method2 = relevel(Method2, ref="CCA"),
+      Bias = abs(Bias)
+      #,across(c(N,p,r,pm,AUC_0), as.factor)
+    )
+  form <- paste0(performance, "*100", " ~ Method2*N + Method2*p + Method2*r + Method2*AUC_0 + Method2*pm + (1|scenario)")
+  mm <- lmer(as.formula(form), data=data)
+
+  dta <- cbind(coef(summary(mm))[,"Estimate"],
+               coef(summary(mm))[,"Pr(>|t|)"])
+  colnames(dta) <- c("Estimate", "p-value")
+  dta <- as.data.frame(t(dta))
+  dta <- dta %>%
+    tibble::rownames_to_column("Result") %>%
+    mutate(
+      Mechanism = mechanism
+    ) %>%
+    relocate(any_of(c("Mechanism", "Result")), .before="(Intercept)") %>%
+    rename(
+      AIPW = Method2AIPW,
+      HDEL = Method2HDEL,
+      KER = Method2KER,
+      MI2 = Method2MI2,
+      MIB2 = Method2MIB2,
+      mice = Method2mice,
+      mix = Method2mix
+    )
+  
+  return((dta))
+}
+```
+
+```{r, eval=FALSE}
+# 2nd approach without interactions; results are not shown
+# bias
+dta_bias5 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+    
+      dta <- mm5("Bias",  mechanism=j)
+      dta_bias5 <- rbind(dta_bias5, dta)
+      
+}
+
+tabno <- tabno+1
+tab_mm_bias5 <- dta_bias5 %>%
+  arrange(Mechanism) %>%
+  gt(groupname_col = c("Mechanism")) %>%
+  row_group_order(groups=c("MCAR", "MAR", "MNAR")) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="p-value",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Differences in bias by method stratified by missingness mechanism")
+  ) %>%
+  tab_footnote(
+    footnote = "CCA as refernce group",
+    locations = cells_column_labels(columns = c(AIPW,HDEL,KER,MI2,MIB2,mice,mix))
+  )
+tab_mm_bias5
+```
+
+```{r, eval=FALSE}
+# 2nd approach with interactions; results are not shown
+# bias
+dta_bias6 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+    
+      dta <- mm6("Bias",  mechanism=j)
+      dta_bias6 <- rbind(dta_bias6, dta)
+      
+}
+
+tabno <- tabno+1
+tab_mm_bias6 <- dta_bias6 %>%
+  arrange(Mechanism) %>%
+  gt(groupname_col = c("Mechanism")) %>%
+  row_group_order(groups=c("MCAR", "MAR", "MNAR")) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="p-value",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Differences in bias by method and simulation parameters stratified by missingness mechanism")
+  ) %>%
+  tab_footnote(
+    footnote = "CCA as refernce group",
+    locations = cells_column_labels(columns = c(AIPW,HDEL,KER,MI2,MIB2,mice,mix))
+  )
+tab_mm_bias6
+```
+
+Bias: Backward elimination 
+
+```{r}
+# 2nd approach with interactions and backward selection; results are  shown
+# bias
+data1 <- res_long %>%
+          mutate(
+              Method2 = as.factor(Method),
+              Method2 = relevel(Method2, ref="CCA"),
+               Bias = abs(Bias)
+           )
+ 
+dta_bias7 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+    
+              form <- paste0("Bias", "*100", " ~ Method2*N + Method2*p + Method2*r + Method2*AUC_0 + Method2*pm + (1|scenario)")
+              mm <- lmer(as.formula(form), data=data1[which(data1$mech==j),])
+              backward <- lmerTest::step(mm)
+              final <- lmerTest::get_model(backward)
+            
+              dta <- cbind(coef(summary(final))[,"Estimate"],
+                           coef(summary(final))[,"Pr(>|t|)"])
+              colnames(dta) <- c("Estimate", "p-value")
+              dta <- as.data.frame(t(dta))
+              dta <- dta %>%
+                tibble::rownames_to_column("Result") %>%
+                mutate(
+                  Mechanism = j
+                ) %>%
+                relocate(any_of(c("Mechanism", "Result")), .before="(Intercept)") %>%
+                rename(
+                  AIPW = Method2AIPW,
+                  HDEL = Method2HDEL,
+                  KER = Method2KER,
+                  MI2 = Method2MI2,
+                  MIB2 = Method2MIB2,
+                  mice = Method2mice,
+                  mix = Method2mix
+                )
+              
+      dta_bias7 <- dta_bias7 %>%
+        bind_rows(dta)
+      
+}
+
+tabno <- tabno+1
+tab_mm_bias7 <- dta_bias7 %>%
+  arrange(Mechanism) %>%
+  gt(groupname_col = c("Mechanism")) %>%
+  row_group_order(groups=c("MCAR", "MAR", "MNAR")) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="p-value",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  )  %>%
+  tab_footnote(
+    footnote = "CCA as refernce group",
+    locations = cells_column_labels(columns = c(AIPW,HDEL,KER,MI2,MIB2,mice,mix))
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Differences in bias by method and simulation parameters stratified by missingness mechanism with backward elimination")
+  )
+tab_mm_bias7
+
+```
+
+
+```{r, eval=FALSE}
+# 2nd approach without interactions; results are not shown
+# RMSE
+
+dta_rmse5 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+    
+      dta <- mm5("RMSE",  mechanism=j)
+      dta_rmse5 <- rbind(dta_rmse5, dta)
+      
+}
+
+tabno <- tabno+1
+tab_mm_rmse5 <- dta_rmse5 %>%
+  arrange(Mechanism) %>%
+  gt(groupname_col = c("Mechanism")) %>%
+  row_group_order(groups=c("MCAR", "MAR", "MNAR")) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="p-value",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Differences in RMSE by method stratified by missingness mechanism")
+  ) %>%
+  tab_footnote(
+    footnote = "CCA as refernce group",
+    locations = cells_column_labels(columns = c(AIPW,HDEL,KER,MI2,MIB2,mice,mix))
+  )
+tab_mm_rmse5
+```
+
+
+```{r, eval=FALSE}
+# 2nd approach with interactions; results are not shown
+# RMSE
+dta_rmse6 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+    
+      dta <- mm6("RMSE",  mechanism=j)
+      dta_rmse6 <- rbind(dta_rmse6, dta)
+      
+}
+
+tabno <- tabno+1
+tab_mm_rmse6 <- dta_rmse6 %>%
+  arrange(Mechanism) %>%
+  gt(groupname_col = c("Mechanism")) %>%
+  row_group_order(groups=c("MCAR", "MAR", "MNAR")) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="p-value",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Differences in RMSE by method and simulation parameter stratified by missingness mechanism")
+  ) %>%
+  tab_footnote(
+    footnote = "CCA as refernce group",
+    locations = cells_column_labels(columns = c(AIPW,HDEL,KER,MI2,MIB2,mice,mix))
+  )
+tab_mm_rmse6
+```
+
+RMSE: Backward elimination 
+
+```{r}
+# 2nd approach with interactions and backward selection; results are shown
+# RMSE
+dta_rmse7 <- c()
+for (j in c("MCAR", "MAR", "MNAR")) {
+    
+      form <- paste0("RMSE", "*100", " ~ Method2*N + Method2*p + Method2*r + Method2*AUC_0 + Method2*pm + (1|scenario)")
+      mm <- lmer(as.formula(form), data=data1[which(data1$mech==j),])
+      backward <- lmerTest::step(mm)
+      final <- lmerTest::get_model(backward)
+            
+      dta <- cbind(coef(summary(final))[,"Estimate"],
+                           coef(summary(final))[,"Pr(>|t|)"])
+      colnames(dta) <- c("Estimate", "p-value")
+      dta <- as.data.frame(t(dta))
+      dta <- dta %>%
+              tibble::rownames_to_column("Result") %>%
+              mutate(
+                Mechanism = j
+              ) %>%
+              relocate(any_of(c("Mechanism", "Result")), .before="(Intercept)") %>%
+              rename(
+                  AIPW = Method2AIPW,
+                  HDEL = Method2HDEL,
+                  KER = Method2KER,
+                  MI2 = Method2MI2,
+                  MIB2 = Method2MIB2,
+                  mice = Method2mice,
+                  mix = Method2mix
+              )
+      dta_rmse7 <- dta_rmse7 %>%
+        bind_rows(dta)
+      
+}
+
+tabno <- tabno+1
+tab_mm_rmse7 <- dta_rmse7 %>%
+  arrange(Mechanism) %>%
+  gt(groupname_col = c("Mechanism")) %>%
+  row_group_order(groups=c("MCAR", "MAR", "MNAR")) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="Estimate",
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = where(is.numeric),
+    rows = Result=="p-value",
+    decimals = 3
+  ) %>%
+  sub_missing(
+  columns = everything(),
+  rows = everything(),
+  missing_text = ""
+  ) %>%
+  tab_header(
+    title = paste0("Table ", tabno, ". Differences in RMSE by method and simulation parameter stratified by missingness mechanism with backward elimination")
+  ) %>%
+  tab_footnote(
+    footnote = "CCA as refernce group",
+    locations = cells_column_labels(columns = c(AIPW,HDEL,KER,MI2,MIB2,mice,mix))
+  )
+tab_mm_rmse7
+```
+
+# References
+
+Bianco AM, Boente G, González–Manteiga W, Pérez–González A. Estimators for ROC curves with missing biomarkers values and informative covariates. Statistical Methods & Applications. 2023.
+
+Cheng W, Tang N. Smoothed empirical likelihood inference for ROC curve in the presence of missing biomarker values. Biom J. 2020;62(4):1038-59.
+
+Long Q, Zhang X, Hsu C-H. Nonparametric multiple imputation for receiver operating characteristics analysis when some biomarker values are missing at random. Stat Med. 2011a;30(26):3149-61.
+
+Long Q, Zhang X, Johnson BA. Robust estimation of area under ROC curve using auxiliary variables in the presence of missing biomarker values. Biometrics. 2011b;67(2):559-67.
+
+Pulit M. A new method of kernel-smoothing estimation of the ROC curve. Metrika. 2016;79(5):603-34.
+
+Robin X, Turck N, Hainard A, Tiberti N, Lisacek F, Sanchez J, et al. pROC: an open-source package for R and S+ to analyze and compare ROC curves. BMC Bioinformatics. 2011(12):77.
+
+Rubin DB. Multiple Imputation for Nonresponse in Surveys. New York: John Wiley & Sons, Inc.; 1987.
+
+Schafer J. mix: Estimation/Multiple Imputation for Mixed Categorical and Continuous Data. R package version 10-11. 2022.
+
+Schafer JL, Graham JW. Missing data: our view of the state of the art. Psychological methods. 2002;7(2):147.
+
+van Buuren S. Flexible Imputation of Missing Data. 2nd ed. New York: Chapman and Hall/CRC; 2018.
+
+van Buuren S, Groothuis-Oudshoorn K. mice: Multivariate Imputation by Chained Equations in R. Journal of Statistical Software. 2011;45(3):1 - 67.
+
+van Smeden M, Moons KG, de Groot JA, et al. Sample size for binary logistic prediction models: Beyond events per variable criteria. Stat Methods Med Res. 2019;28(8):2455-2474. doi:10.1177/0962280218784726
+
+Wang B, Qin G. Imputation-based empirical likelihood inference for the area under the ROC curve with missing data. Stat Interface. 2012;5(3):319-29.
+
+Wang B, Qin G. Empirical likelihood-based confidence intervals for the sensitivity of a continuous-scale diagnostic test with missing data. Commun Stat Theory Methods. 2014;43(15):3248-68.
+
+# Session info
+
+```{r sessionInfo}
+sessioninfo::session_info()
+```
