@@ -42,11 +42,11 @@ for (i in 1:length(tt)){
   dist <- (tt[i]-(1-roc$specificities))^2
   x[i] <- order(dist)[1]
 }
-fpr <- roc$specificities[x]
+sp <- roc$specificities[x]
 ROC.CCA_full <- roc$sensitivities[x]
-ci <- ci(roc, of = "se", specificities = 1-fpr)
-ROC.CIL.CCA_full <- ci[,1]
-ROC.CIU.CCA_full <- ci[,2]
+ci <- ci(roc, of = "se", specificities = sp)
+ROC.CIL.CCA_full <- ci[,"2.5%"]
+ROC.CIU.CCA_full <- ci[,"97.5%"]
 
 ## CCA for missing data
 ci <- ci.auc(data$d,data$y1)
@@ -61,11 +61,11 @@ for (i in 1:length(tt)){
   dist <- (tt[i]-(1-roc$specificities))^2
   x[i] <- order(dist)[1]
 }
-fpr <- roc$specificities[x]
+sp <- roc$specificities[x]
 ROC.CCA <- roc$sensitivities[x]
-ci <- ci(roc, of = "se", specificities = 1-fpr)
-ROC.CIL.CCA <- ci[,1]
-ROC.CIU.CCA <- ci[,2]
+ci <- ci(roc, of = "se", specificities = sp)
+ROC.CIL.CCA <- ci[,"2.5%"]
+ROC.CIU.CCA <- ci[,"97.5%"]
 
 ## HDEL
 res <- hdel(data=data, d="reftest", ind="y1", a=0.95, l1=0.5, l2=0.95, tt=seq(0.01, 1-0.01, 0.01), seed=548) # warnings indicate that <0.75 there is no logr
@@ -185,7 +185,7 @@ ROC.CIU.mix <- rep(NA, 99)
 set.seed(275)
 mdf <- missing_data.frame(data_mix)
 mdf <- change(mdf, y = "y1", what = "imputation_method", to = "pmm")
-imp <- mi(mdf, n.chains=20) # imputation
+imp <- mi::mi(mdf, n.chains=20,  n.iter=10, parallel=FALSE, seed=347) # imputation
 implist <- mi::complete(imp)
 fit <- unlist(lapply(implist, function(d) auc(d$reftest, d$y1))) # estimate AUC
 AUC.mi_ = mean(fit)
@@ -265,3 +265,4 @@ roc_cil <- cbind(ROC.CIL.CCA_full, ROC.CIL.CCA, ROC.CIL.HDEL, ROC.CIL.MI2, ROC.C
 roc_ciu <- cbind(ROC.CIU.CCA_full, ROC.CIU.CCA, ROC.CIU.HDEL, ROC.CIU.MI2, ROC.CIU.MIB2, ROC.CIU.mice, ROC.CIU.mix, ROC.CIU.mi_,
                  ROC.CIU.KER, ROC.CIU.CONV)
 roc <- as.data.frame(cbind(roc, roc_cil, roc_ciu))
+

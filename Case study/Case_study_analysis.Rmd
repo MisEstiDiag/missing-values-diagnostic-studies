@@ -57,6 +57,7 @@ library(haven)
 library(dplyr)
 library(gt)
 library(arsenal)
+library(ks)
 ```
 
 ## load functions
@@ -148,7 +149,7 @@ The original dataset (data_full) with restriction to only left ears is used as "
 
 ## Generating the missing data and calculate AUC and ROC 
 
-```{r, include=FALSE, eval=FALSE}
+```{r, include=FALSE, eval=TRUE}
 
 # these calculations take a while (ca 20 min); thus we save the data and load them in the next chunk
 set.seed(7499)
@@ -263,7 +264,7 @@ The original dataset (data_full) with restriction to only left ears is used as "
 
 ## Generating the missing data and calculate AUC and ROC 
 
-```{r, include=FALSE, eval=FALSE}
+```{r, include=FALSE, eval=TRUE}
 # these calculations take a while (ca 20 min); thus we save the data and load them in the next chunk
 
 set.seed(295)
@@ -379,7 +380,7 @@ The original dataset (data_full) with restriction to only left ears is used as "
 
 ## Generating the missing data and calculate AUC and ROC 
 
-```{r, include=FALSE, eval=FALSE}
+```{r, include=FALSE, eval=TRUE}
 # these calculations take a while (ca 20 min); thus we save the data and load them in the next chu
 
 set.seed(682)
