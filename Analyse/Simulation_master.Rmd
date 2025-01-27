@@ -522,16 +522,15 @@ for (i in 1:length(idxlist)) {
                           scale_y_continuous(limits = limits[[i]]) +
                           theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
                           facet_grid(p + r ~ AUC_0 + pm, labeller = label_context) +
-                          theme(axis.title = element_text(size = 18),
-                              axis.text = element_text(size = 14),
-                              plot.title = element_text(size = 20),
-                              strip.text.x = element_text(size = 14),
-                              strip.text.y = element_text(size = 14))
+                          theme(axis.title = element_text(size = 8),
+                              axis.text = element_text(size = 6),
+                              strip.text.x = element_text(size = 6),
+                              strip.text.y = element_text(size = 6))
 }
 
 fig1 <- ggarrange(plot_pub1[[1]], plot_pub1[[2]], labels=c("A","B"), ncol=2)
 fig1
-ggsave("./Analyse/Ergebnisse/Plots/Bias_MAR_pub.png", plot=fig1, width = 20, height = 10)
+#ggsave("./Analyse/Ergebnisse/Plots/Bias_MAR_pub.png", plot=fig1, width = 20, height = 10)
 
 ```
 
@@ -769,7 +768,7 @@ plot_pub2.2 <- ggplot(res_long[idx4,], aes(x = pm, y = RMSE, group = Method)) +
 
 fig2 <- ggarrange(plot_pub2.1, plot_pub2.2, labels=c("A","B"), ncol=2)
 fig2
-ggsave("./Analyse/Ergebnisse/Plots/RMSE_MAR_pub.png", width = 20, height = 10)
+#ggsave("./Analyse/Ergebnisse/Plots/RMSE_MAR_pub.png", width = 20, height = 10)
 
 ```
 
@@ -896,7 +895,7 @@ for (i in 1:length(idxlist)) {
 
 fig3 <- ggarrange(plot_pub3[[1]], plot_pub3[[2]], labels=c("A","B"), ncol=2)
 fig3
-ggsave("./Analyse/Ergebnisse/Plots/cov_MAR_pub.png", width = 20, height = 10)
+#ggsave("./Analyse/Ergebnisse/Plots/cov_MAR_pub.png", width = 20, height = 10)
 
 ```
 
@@ -984,7 +983,7 @@ plot_pub4 <- ggplot(res_long[idx2,], aes(x = pm, y = Power, group = Method)) +
                               legend.text = element_text(size = 14),
                               legend.position = "none")
 plot_pub4
-ggsave("./Analyse/Ergebnisse/Plots/Power_MAR_pub.png", width = 20, height = 10)
+#ggsave("./Analyse/Ergebnisse/Plots/Power_MAR_pub.png", width = 20, height = 10)
 
 ```
 
