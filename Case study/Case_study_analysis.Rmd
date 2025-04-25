@@ -100,7 +100,7 @@ nnhs2 <- read_dta("./Case study/nnhs2.dta")
 
 # ear: 1=left 2=right
 # sitenum: site
-# currage: current age
+# currage: corrected age
 # d: disease (reference test)
 # y1: DPOAE
 # y2: TEOAE
@@ -124,6 +124,10 @@ data_full <- nnhs2 %>%
     gender = as_factor(gender),
     d = as_factor(d)
   )
+
+attr(data_full$gender,'label')  <- 'Gender'
+attr(data_full$currage,'label')  <- 'Age corrected for premature birth'
+attr(data_full$sitenum,'label') <- 'Site (i.e. hospital)'
 
 # generate dataset with missing values
 # a priori: define missingness pattern
@@ -212,7 +216,8 @@ plot1 <- ggplot(res_auc_mcar, aes(x=Method, y=AUC)) +
   geom_hline(yintercept = c( CIL, CIU), col = "red", linetype = "dashed") +
   theme(axis.title = element_text(size = 18),
         axis.text = element_text(size = 16),
-        plot.title = element_text(size = 20))
+        plot.title = element_text(size = 20),
+        axis.text.x = element_text(angle=45, vjust=1, hjust=1))
 plot1
 #ggsave("./Case study/Ergebnisse/mcar_AUC.pdf", width = 20, height = 10)
 ```
@@ -325,7 +330,8 @@ plot1 <- ggplot(res_auc_mar, aes(x=Method, y=AUC)) +
   geom_hline(yintercept = AUC, col = "red") +
   geom_hline(yintercept = c( CIL, CIU), col = "red", linetype = "dashed") +
   theme(axis.title = element_text(size = 18),
-        axis.text = element_text(size = 16))
+        axis.text = element_text(size = 16),
+        axis.text.x = element_text(angle=45, vjust=1, hjust=1))
 plot1
 #ggsave("Ergebnisse/mar_AUC.pdf", width = 20, height = 10)
 ggsave("./Case study/Ergebnisse/mar_auc.png", width = 15, height = 10)
@@ -439,7 +445,8 @@ plot1 <- ggplot(res_auc_mnar, aes(x=Method, y=AUC)) +
   geom_hline(yintercept = c( CIL, CIU), col = "red", linetype = "dashed") +
   theme(axis.title = element_text(size = 18),
         axis.text = element_text(size = 16),
-        plot.title = element_text(size = 20))
+        plot.title = element_text(size = 20),
+        axis.text.x = element_text(angle=45, vjust=1, hjust=1))
 plot1
 #ggsave("./Case study/Ergebnisse/mnar_AUC.pdf", width = 20, height = 10)
 ```
