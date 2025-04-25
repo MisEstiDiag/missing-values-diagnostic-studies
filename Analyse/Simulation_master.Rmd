@@ -2,7 +2,7 @@
 title: 'Comparison of methods to handle missing values in a continuous index test in a diagnostic study – a simulation study (Additional file 4)'
 author: 
  - Katharina Stahlmann, University Medical Center Hamburg-Eppendorf<br>  Institute of Medical Biometry and Epidemiology, k.stahlmann@uke.de
- - Bastiaan Kellerhuis, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands
+ - Bastiaan Kellerhuis, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands; Blavatnik School of Government, University of Oxford, Oxford, UK
  - Johannes B. Reitsma, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands
  - Nandini Dendukuri, Department of Medicine, McGill University, Montreal, Canada
  - Antonia Zapf, University Medical Center Hamburg-Eppendorf<br>  Institute of Medical Biometry and Epidemiology

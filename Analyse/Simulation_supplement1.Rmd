@@ -2,7 +2,7 @@
 title: 'Additional methods to handle missing values in a continuous index test in a diagnostic study – supplemental simulation scenarios (Additional file 1)'
 author: 
  - Katharina Stahlmann, University Medical Center Hamburg-Eppendorf<br>  Institute of Medical Biometry and Epidemiology, k.stahlmann@uke.de,
- - Bastiaan Kellerhuis, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands
+ - Bastiaan Kellerhuis, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands; Blavatnik School of Government, University of Oxford, Oxford, UK
  - Johannes B. Reitsma, Julius Center for Health Sciences and Primary Care, University Medical Center Utrecht, Utrecht University, Utrecht, The Netherlands
  - Nandini Dendukuri, Department of Medicine, McGill University, Montreal, Canada
  - Antonia Zapf, University Medical Center Hamburg-Eppendorf<br>  Institute of Medical Biometry and Epidemiology
@@ -175,7 +175,8 @@ res <- res_dta %>%
 The following performance parameter will be calculated: number of missing values, bias, root mean squared error, empirical standard deviation, coverage, bias-eliminated coverage and power as well as the respective monte carlo standard errors for each performance parameter. 
 
 ```{r}
-source("Analyse/Simulation_performance3.R")
+fix_col <- c("N","p","AUC_0","r", "pm","mech", "AUC_min","scenario")
+source("./Analyse/Simulation_performance3.R")
 # input: res (file with simulation results as dataframe)
 # out: raw_res (res + step 1 of performance calculation -> 1 row for each simulation run), scenario_res (dataframe with performance parameters, -> 1 row for each scenario aggregated over the runs)
 ```
