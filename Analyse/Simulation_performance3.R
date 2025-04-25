@@ -36,7 +36,7 @@ for (j in 1:length(auc_vars)){
 raw_res <- cbind(res,df)
 
 # average over nsim
-scenario <- res[res$sim==1,2:9] # dataframe for summary results
+scenario <- res[res$sim==1,fix_col] # dataframe for summary results
 average <- data.frame(matrix(ncol = ncol(df)+length(auc_vars)*10, nrow = nrow(scenario))) # dataframe to store averages
 names3 <- paste("empSE", auc_vars, sep = ".")
 names6 <- paste("MCE.bias", auc_vars, sep = ".")

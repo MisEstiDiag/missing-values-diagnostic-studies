@@ -141,25 +141,44 @@ Table `r tabno <- tabno+1` `r tabno`. Overview of methods
 | AIPW        | Augmented Inverse Probability Weighting (Long et al. 2011b)                     |
 
 ### CCA 
-We compared the above explained methods with the standard complete case analysis (CCA) which excludes all subjects with missing values in the index test (or reference standard) from the calculations. For the application of the CCA, we used the ci.auc function of the pROC package (Robin et al. 2011).
+We compared the below explained methods with the standard complete case analysis (CCA) which excludes all subjects with missing values in the index test (or reference standard) from the calculations. For the application of the CCA, we used the ci.auc function of the pROC package (Robin et al. 2011). It estimates the AUc by the trapezoidal rule (Fawcett 2005), with
+$$\widehat{AUC}_{(t_{i}-t_{i-1})} = (t_{i}-t_{i-1}) \times \frac{f(t_{i})+f(t_{i-1}))}{2}$$
+for each value of the false positive value $t_{i}$. The AUC for the full interval $[a,b]$ is then estimated by
+$$\widehat{AUC}_{(b-a)} = \sum_{t=a+1}^{b} AUC_{(t_{i}-t_{i-1})}$$
+The confidence interval for the AUC is calculated by the same funciton according to DeLong (1988). For the case study, the ROC is estimated by the roc() function in the pROC package (Robin et al. 2011).
 
 ### HDEL 
-The HDEL method was developed by Wang and Qin (2012; 2014) and provided by them as R code upon request. First, hot deck imputation is performed under the MCAR assumption. The AUC is then estimated based on the imputed dataset. For the ROC, sensitivity values for some FPR are calculated. Subsequently, empirical likelihood confidence intervals are estimated for the AUC and the sensitivities using the scaled chi-square distribution. For calculating the CI of the sensitivities, Wang and Qin (2012; 2014) proposed the imputation-based profile empirical likelihood and the imputation-based hybrid bootstrap empirical likelihood approach. We only used the former approach in our simulation study, as the code for the latter was not available. This method assumes missing values to be MCAR. 
-
-### MI2 and MIB2
-Both methods MI2 and MIB2 follow a nonparametric multiple imputation approach and were developed by Long et al. (2011a). They apply k-nearest neighbor matching based on a propensity and prediction score, which can be used if index test values are MAR. Firstly, the propensity of missingness of the index test is modeled by means of a logistic regression using available covariates (in this simulation study x2, x3, x4) as predictors. Secondly, a linear regression is performed to model the observed index test values against available covariates (in this simulation study x2, x3, x4). Based on the model estimates, a prediction score and a propensity score are computed for each subject and standardized to mean=0 and standard deviation SD=1. A distance measure between subjects with missing and observed index test values is computed by combining both scores. Different weights can be assigned to both scores (in sum equal to 1). In this simulation study, equal weights (each 0.5) were used following Long et al. (2011a). Stratified by target condition, missing values are subsequently multiply imputed with a random draw of one of the k nearest neighbors (subjects with the shortest distance and observed index test values). The AUC, ROC, and their CIs are estimated and pooled according to Rubins rules (Rubin 1987). The combination of both the propensity and prediction models results in a doubly robust model. That is to say, at least one model must be correctly specified to be consistent (Long et al. 2011a). The MIB2 method further includes a bootstrap step before the estimation of both models to reflect the uncertainty in estimating the model parameters. Both methods are only available as R code. Following Long et al. (2011a), the number of nearest neighbors was set to 3, and the number of imputation datasets to 10.
+The HDEL method was developed by Wang and Qin (2012; 2014) and provided by them as R code upon request. First, hot deck imputation is performed under the MCAR assumption. The AUC is then estimated based on the imputed dataset folowing the Wilcoxon Mann-Whitney statistic (Hanley and McNeil 1982):
+$$\widehat{AUC} = \frac{1}{mn} \sum_{i=1}^{m} \sum_{j=1}^{n}I(Y_{i} \ge X_{j})$$ 
+where $X_{1},...,X_{m}$ are the index test values of the subjects without the target condition and $Y_{1},...,Y_{n}$ are the index test values of subjects with the target condition. 
+For the ROC, sensitivity values for some false positive values are calculated. Subsequently, empirical likelihood confidence intervals are estimated for the AUC and the sensitivities using the scaled chi-square distribution. For calculating the CI of the sensitivities, Wang and Qin (2012; 2014) proposed the imputation-based profile empirical likelihood and the imputation-based hybrid bootstrap empirical likelihood approach. We only used the former approach in our simulation study, as the code for the latter was not available. This method assumes missing values to be MCAR. 
 
 ### Mice 
-Multiple imputations by chained equations is a standard multiple imputation approach that employs fully conditional specification via Markov Chain Monte Carlo methods. It can be accessed through the mice package in R (van Buuren and Groothuis-Oudshoorn 2011). For each variable with missing data, conditional densities are specified. Multivariate imputation is performed variable-by-variable and iterating over the conditional densities. We selected predictive mean matching as imputation method since this is the default method for numeric variables in mice and performs well overall (van Buuren and Groothuis-Oudshoorn 2011). As Bayesian linear regression may be more efficient for normally distributed data (van Buuren 2018), we include mice using this imputation method (called norm) in addition to mice with PMM in supplemental simulation scenarios. We set the number of iterations to 10 and generated 20 imputation datasets for our simulation as Schafer and Graham (2002) deemed 20 imputations to remove most noise in the estimates. All variables (index test, the three covariates and the reference standard) without interaction terms were included in the imputation model. After imputation, estimators for the AUC and sensitivities for different FPR values are pooled by Rubin’s rules (Rubin 1987).
+Multiple imputations by chained equations is a standard multiple imputation approach that employs fully conditional specification via Markov Chain Monte Carlo methods. It can be accessed through the mice package in R (van Buuren and Groothuis-Oudshoorn 2011). For each variable with missing data, conditional densities are specified. Multivariate imputation is performed variable-by-variable and iterating over the conditional densities. We selected predictive mean matching as imputation method since this is the default method for numeric variables in mice and performs well overall (van Buuren and Groothuis-Oudshoorn 2011). As Bayesian linear regression may be more efficient for normally distributed data (van Buuren 2018), we include mice using this imputation method (called norm) in addition to mice with PMM in supplemental simulation scenarios. We set the number of iterations to 10 and generated 20 imputation datasets for our simulation as Schafer and Graham (2002) deemed 20 imputations to remove most noise in the estimates. All variables (index test, the three covariates and the reference standard) without interaction terms were included in the imputation model. For each imputed dataset, AUC and ROC values are estimated with the auc() and roc() function, respectively, of the pROC package (Robin et al. 2011) and pooled by Rubin's rules (1987). The respective AUC formula is given in the decription of CCA. The confidence interval is estimated based on DeLong et al. (1988) using Rubin's rules (1987). 
 
 ### Mix
-In contrast to the previous packages, the mix package by Schafer (2022) employs joint modeling under an unrestricted general location model for mixed data. After defining the multivariate distribution for the missing data, missing values are imputed from their conditional distribution using Markov chain Monte Carlo methods. This approach is described in Schafer (2022). For this simulation study, we used the same settings as Schafer (2022) and set the number of iterations to 1,000 and the number of steps to 100. In congruence with the MI approach described above, we used all variables without interaction terms in the imputation model. 
+In contrast to the previous packages, the mix package by Schafer (2022) employs joint modeling under an unrestricted general location model for mixed data. After defining the multivariate distribution for the missing data, missing values are imputed from their conditional distribution using Markov chain Monte Carlo methods. This approach is described in Schafer (2022). For this simulation study, we used the same settings as Schafer (2022) and set the number of iterations to 1,000 and the number of steps to 100. In congruence with the MI approach described above, we used all variables without interaction terms in the imputation model and estimated the AUC, its confidence interval and ROC values in the same way. 
+
+### MI2 and MIB2
+Both methods MI2 and MIB2 follow a nonparametric multiple imputation approach and were developed by Long et al. (2011a). They apply k-nearest neighbor matching based on a propensity and prediction score, which can be used if index test values are MAR. Firstly, the propensity of missingness of the index test is modeled by means of a logistic regression using available covariates (in this simulation study x2, x3, x4) as predictors. Secondly, a linear regression is performed to model the observed index test values against available covariates (in this simulation study x2, x3, x4). Based on the model estimates, a prediction score and a propensity score are computed for each subject and standardized to mean=0 and standard deviation SD=1. A distance measure between subjects with missing and observed index test values is computed by combining both scores. Different weights can be assigned to both scores (in sum equal to 1). In this simulation study, equal weights (each 0.5) were used following Long et al. (2011a). Stratified by target condition, missing values are subsequently multiply imputed with a random draw of one of the k nearest neighbors (subjects with the shortest distance and observed index test values). The AUC and its confidence interval are estimated based on the imputed datasets as described for mice. The combination of both the propensity and prediction models results in a doubly robust model. That is to say, at least one model must be correctly specified to be consistent (Long et al. 2011a). The MIB2 method further includes a bootstrap step before the estimation of both models to reflect the uncertainty in estimating the model parameters. Both methods are only available as R code. Following Long et al. (2011a), the number of nearest neighbors was set to 3, and the number of imputation datasets to 10.
 
 ### KER 
-In addition, Bianco et al. (2023) compared the CONV method with a kernel-based approach according to Pulit (2016) which was extended by inverse probability weighting. Thereby, they constructed pseudo observations and estimated a propensity model via a logistic regression using available covariates (here x2, x3, x4). Upon request, the authors provided this method as R code.
+Bianco et al. (2023) proposed a kernel-based approach according to Pulit (2016) which was extended by inverse probability weighting. Thereby, they constructed pseudo observations and estimated a propensity model via a logistic regression using available covariates (here x2, x3, x4). Based on the following model the ROC and AUC wre estimated:
+$$ \widehat{ROC}_{KER}(p) = \frac{1} {\sum_{l=1}^{n_{D}} \frac{\delta_{D,l}}{\hat{\pi}_{D}(\mathbf{x}_{D,l})}} \sum_{j=1}^{n_{D}} \frac{\delta_{D,j}}{\hat{\pi}_{D}(\mathbf{x_{D,j}})} \varkappa \left( \frac{p-\hat{Z}_{j}}{h} \right) $$
+where $\varkappa(t) = \int_{-\infty}^{t}K(u)du$ and $K$ is a continuous symetric density function with support $[-1,1]$, $h$ is a smoothing parameter, $\delta$ is the missingness indicator for the index test $Y$ with $\delta=1$ when $Y$ is observed and $\delta=0$ when $Y$ is missing, $\mathbf{x}$ denotes available covariates and $\hat{\pi}$ is an estimate of $Pr(\delta=1)$ conditional on covariates and true target condition. $\hat{Z}_{j}$ are pseudo-observations for each $1\le j \le n_{D}$ with $\delta_{D,j}=1$ defined by $\hat{Z}_{j} = 1- \hat{F}_{H,IPW}(y_{D,j})$.
+The AUC is then estimated by
+$$\widehat{AUC}_{KER} = (1/N)\sum_{l=1}^N \widehat{ROC}_{KER}(p_{l}) $$ 
+with $\left\{ p_{l} \right\}_{1\le l\le N}$ an equisdistant grid over $(0,1)$ (Bianco et al. 2023). The confidence interval is estimated following Hanley and McNeil (1982).
+Upon request, the authors provided this method as R code.
 
 ### AIPW 
-Long et al. (2011b) proposed a doubly robust augmented inverse probability method that is applicable for missing index test values under MAR. Similar to the MI2 and MIB2 methods, the propensity of missingness of the index test is modeled through a logistic regression using available covariates (in this simulation study x2, x3, x4) as predictors. Then, a linear regression is performed to model the observed index test values against available covariates (here x2, x3, x4). The AUC is a weighted average of the linear regression and the inverse probability (propensity score) estimator. Its CI is computed using bootstrap (200 bootstrap samples). Long et al. (2011b) additionally proposed a sensitivity analysis to investigate MNAR. Unfortunately, their original code was not available. However, the code was included in the code of Cheng and Tang (2020) as they used the AIPW method under MAR for comparison.  
+Long et al. (2011b) proposed a doubly robust augmented inverse probability method that is applicable for missing index test values under MAR. Similar to the MI2 and MIB2 methods, the propensity of missingness of the index test is modeled through a logistic regression using available covariates (in this simulation study x2, x3, x4) as predictors. Then, a linear regression is performed to model the observed index test values against available covariates (here x2, x3, x4). The AUC is a weighted average of the linear regression and the inverse probability (propensity score) estimator:
+
+$$\widehat{AUC} = \frac{1}{\sum_{i \ne j} \frac{\delta_{i} \delta_{j}}{\hat{\pi}_{i} \hat{\pi}_{j}} D_{i}(1-D_{j})} \sum_{i\neq j} D_{i}(1-D_{j}) \left\{ \frac{\delta_{i} \delta_{j}} {\hat{\pi}_{i} \hat{\pi}_{j}} I_{ij} - \frac{\delta_{i} \delta_{j} - \hat{\pi}_{i} \hat{\pi}_{j}}{\hat{\pi}_{i} \hat{\pi}_{j}} E(I_{i,j}| \mathbf{Z_{i}},\mathbf{Z_{j}},D_{i}=1,D_{j}=0) \right\}$$ 
+
+where $i=1,...,n$ and $j=1,...,n$ are the subjects with target condition $(D_{i}=1)$ and without $(D_{i}=0)$, $\delta$ is the missingness indicator for the index test $X$ with $\delta=1$ when $X$ is observed and $\delta=0$ when $X$ is missing, $\mathbf{Z}$ denotes available covariates and $\hat{\pi}$ is an estimate of $Pr(\delta=1)$ conditional on $\mathbf{Z}$ and $D$ (Long et al. 2011b). 
+Its CI is computed using bootstrap (200 bootstrap samples). Long et al. (2011b) additionally proposed a sensitivity analysis to investigate MNAR. Unfortunately, their original code was not available. However, the code was included in the code of Cheng and Tang (2020) as they used the AIPW method under MAR for comparison.  
+
 
 ## Conduct the simulation
 
@@ -239,6 +258,7 @@ res <- rename(res, r = korr)
 The following performance parameter will be calculated: number of missing values, bias, root mean squared error, empirical standard deviation, coverage probability and power as well as the respective monte carlo standard errors for each performance parameter. 
 
 ```{r}
+fix_col <- c("N","p","AUC_0","r", "pm","mech", "AUC_min","scenario")
 source("./Analyse/Simulation_performance3.R")
 # input: res (file with simulation results as dataframe)
 # out: raw_res (res + step 1 of performance calculation -> 1 row for each simulation run), scenario_res (dataframe with performance parameters, -> 1 row for each scenario aggregated over the iterations)
@@ -530,7 +550,7 @@ for (i in 1:length(idxlist)) {
 
 fig1 <- ggarrange(plot_pub1[[1]], plot_pub1[[2]], labels=c("A","B"), ncol=2)
 fig1
-#ggsave("./Analyse/Ergebnisse/Plots/Bias_MAR_pub.png", plot=fig1, width = 20, height = 10)
+ggsave("./Analyse/Ergebnisse/Plots/Bias_MAR_pub.png", plot=fig1, width = 20, height = 10)
 
 ```
 
@@ -768,7 +788,7 @@ plot_pub2.2 <- ggplot(res_long[idx4,], aes(x = pm, y = RMSE, group = Method)) +
 
 fig2 <- ggarrange(plot_pub2.1, plot_pub2.2, labels=c("A","B"), ncol=2)
 fig2
-#ggsave("./Analyse/Ergebnisse/Plots/RMSE_MAR_pub.png", width = 20, height = 10)
+ggsave("./Analyse/Ergebnisse/Plots/RMSE_MAR_pub.png", width = 20, height = 10)
 
 ```
 
@@ -872,7 +892,39 @@ plotlist3[[6]]
 idx3 <- which(res_long$mech == "MAR" & res_long$N==100 & res_long$r!=0.5 & res_long$AUC_0!=0.85 & res_long$p!=0.3 & res_long$pm!=0.3)
 idx4 <- which(res_long$mech == "MAR" & res_long$N==500 & res_long$r!=0.5 & res_long$AUC_0!=0.85 & res_long$p!=0.3 & res_long$pm!=0.3)
 
-idxlist <- list(idx3, idx4)
+
+plot_pub3.1 <- ggplot(res_long[idx3,], aes(y=Method, x=Coverage, , color=bias_cut)) +
+                      geom_segment( aes(y=Method, yend=Method, x=0.95, xend=Coverage)) +
+                      geom_point(size=2) +
+                      geom_vline(xintercept=0.95) +
+                      geom_text(aes(MC_cov_ciu, Method, label = ")")) +
+                      geom_text(aes(MC_cov_cil, Method, label = "(")) +
+                      scale_color_grey() +
+                      labs(color="Bias categorized") +
+                      facet_grid(pm + r ~ p + AUC_0, labeller = label_both) + 
+                          theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              legend.position = "bottom")
+
+plot_pub3.2 <- ggplot(res_long[idx4,], aes(y=Method, x=Coverage, , color=bias_cut)) +
+                      geom_segment( aes(y=Method, yend=Method, x=0.95, xend=Coverage)) +
+                      geom_point(size=2) +
+                      geom_vline(xintercept=0.95) +
+                      geom_text(aes(MC_cov_ciu, Method, label = ")")) +
+                      geom_text(aes(MC_cov_cil, Method, label = "(")) +
+                      scale_color_grey() +
+                      labs(color="Bias categorized") +
+                      facet_grid(pm + r ~ p + AUC_0, labeller = label_both) + 
+                          theme(axis.title = element_text(size = 18),
+                              axis.text = element_text(size = 16),
+                              plot.title = element_text(size = 20),
+                              strip.text.x = element_text(size = 14),
+                              strip.text.y = element_text(size = 14),
+                              legend.position = "bottom")
+
 
 # lollipop plot coverage
 plot_pub3 <- list()
@@ -890,12 +942,12 @@ for (i in 1:length(idxlist)) {
                               plot.title = element_text(size = 20),
                               strip.text.x = element_text(size = 14),
                               strip.text.y = element_text(size = 14),
-                              legend.position = "none")
+                              legend.position = "bottom")
 }
 
-fig3 <- ggarrange(plot_pub3[[1]], plot_pub3[[2]], labels=c("A","B"), ncol=2)
+fig3 <- ggarrange(plot_pub3.1, plot_pub3.2, labels=c("A","B"), ncol=2, common.legend = TRUE, legend = "bottom")
 fig3
-#ggsave("./Analyse/Ergebnisse/Plots/cov_MAR_pub.png", width = 20, height = 10)
+ggsave("./Analyse/Ergebnisse/Plots/cov_MAR_pub.png", width = 20, height = 10)
 
 ```
 
@@ -983,7 +1035,7 @@ plot_pub4 <- ggplot(res_long[idx2,], aes(x = pm, y = Power, group = Method)) +
                               legend.text = element_text(size = 14),
                               legend.position = "none")
 plot_pub4
-#ggsave("./Analyse/Ergebnisse/Plots/Power_MAR_pub.png", width = 20, height = 10)
+ggsave("./Analyse/Ergebnisse/Plots/Power_MAR_pub.png", width = 20, height = 10)
 
 ```
 
@@ -2017,7 +2069,11 @@ tab_mm_rmse7
 
 Bianco AM, Boente G, González–Manteiga W, Pérez–González A. Estimators for ROC curves with missing biomarkers values and informative covariates. Statistical Methods & Applications. 2023.
 
+DeLong ER, DeLong DM, Clarke-Pearson DL. Comparing the areas under two or more correlated receiver operating characteristic curves: a nonparametric approach. Biometrics. 1988;44(3):837-45.
+
 Cheng W, Tang N. Smoothed empirical likelihood inference for ROC curve in the presence of missing biomarker values. Biom J. 2020;62(4):1038-59.
+
+Hanley JA, McNeil BJ. The meaning and use of the area under a receiver operating characteristic (ROC) curve. Radiology. 1982;143(1):29-36.
 
 Long Q, Zhang X, Hsu C-H. Nonparametric multiple imputation for receiver operating characteristics analysis when some biomarker values are missing at random. Stat Med. 2011a;30(26):3149-61.
 
